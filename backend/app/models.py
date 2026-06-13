@@ -355,8 +355,9 @@ class Task(Base):
     tokens_out: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=expression.text("0")
     )
+    # Numeric(12,6): 저가 모델의 마이크로 비용(센트 미만)까지 보존(cost_usd 6자리와 정합).
     est_cost_usd: Mapped[float] = mapped_column(
-        Numeric(10, 4), nullable=False, server_default=expression.text("0")
+        Numeric(12, 6), nullable=False, server_default=expression.text("0")
     )
     # verification: dev/design task의 [{cmd, exit_code, summary}] 명령 로그(D31).
     verification: Mapped[list | None] = mapped_column(JSONB, nullable=True)

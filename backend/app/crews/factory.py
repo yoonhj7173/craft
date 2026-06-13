@@ -62,6 +62,33 @@ UNIT_DEFS: dict[str, tuple[str, str, str]] = {
 }
 
 
+def build_agent_crew(llm: LLM, role_instructions: str, prompt: str) -> Crew:
+    """v3: DB agent 행의 role_instructions + 주입 LLM으로 단일-에이전트 Crew를 만든다.
+
+    role_instructions가 곧 에이전트의 정체성/방법(저작된 카탈로그, D41)이므로 Agent.role에
+    요약을, backstory에 전체 지침을 싣는다. human_input=False — needs-input은 센티넬로 표면화.
+    """
+    first_line = role_instructions.strip().splitlines()[0][:120] if role_instructions.strip() else "Agent"
+    agent = Agent(
+        role=first_line,
+        goal="Complete the assigned task per your role instructions.",
+        backstory=role_instructions.strip(),
+        llm=llm,
+        allow_delegation=False,
+        verbose=False,
+    )
+    task = Task(
+        description=prompt,
+        expected_output=(
+            "Either the final answer, or a single line "
+            "'AWAITING_INPUT: <question>' if user input is required."
+        ),
+        agent=agent,
+        human_input=False,
+    )
+    return Crew(agents=[agent], tasks=[task], verbose=False)
+
+
 def build_crew_factory(
     llm: LLM,
     unit_key: str = "senior_engineer",
