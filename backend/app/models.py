@@ -332,6 +332,10 @@ class Task(Base):
 
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="queued")
     engine: Mapped[str] = mapped_column(Text, nullable=False)
+    # stopped: 유저 Stop으로 failed가 된 경우 True(에러 failed와 구분 + 전파 억제 belt, D16).
+    stopped: Mapped[bool] = mapped_column(
+        nullable=False, server_default=expression.false()
+    )
     instructions: Mapped[str] = mapped_column(Text, nullable=False)
     input_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     continuations: Mapped[list] = mapped_column(
