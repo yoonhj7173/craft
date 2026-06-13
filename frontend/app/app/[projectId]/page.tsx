@@ -8,6 +8,7 @@ import { apiFetch } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { connectSSE } from "@/lib/sse";
 import type { MapData } from "@/lib/map/types";
+import Hud from "@/components/hud/Hud";
 
 const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), { ssr: false });
 
@@ -38,11 +39,21 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
     await apiFetch(`/api/teams/${teamId}`, { method: "PATCH", token, body: JSON.stringify({ room_x: x, room_y: y }) }).catch(() => {});
   }
 
+  async function sendChat(message: string): Promise<string | void> {
+    try {
+      const token = await getToken();
+      const res = await apiFetch<{ reply: string }>(`/api/projects/${params.projectId}/chat`, {
+        method: "POST", token, body: JSON.stringify({ message }),
+      });
+      return res.reply;
+    } catch { /* HUD가 유저 버블만 보존 */ }
+  }
+
   if (error) return <Centered>{error}</Centered>;
   if (!data) return <Centered>Loading office…</Centered>;
 
   return (
-    <div className="h-screen w-screen">
+    <div className="relative h-screen w-screen overflow-hidden">
       <MapCanvas
         data={data}
         callbacks={{
@@ -50,6 +61,11 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
           onSelectAgent: (id) => console.log("agent", id), // 패널은 item 24
           onSelectTeam: (id) => console.log("team", id),
         }}
+      />
+      <Hud
+        projectName={data.project.name}
+        onSend={sendChat}
+        onOpen={(w) => console.log("open", w)} // 오버레이/모달은 item 24-25
       />
     </div>
   );
