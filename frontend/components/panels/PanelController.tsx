@@ -56,8 +56,8 @@ export function PanelController({ projectId, getToken, mapData, sel, setSel, onC
     return (
       <>
         <AgentPanel data={agent} onClose={close}
-          onStop={() => call(`/api/agents/${agent.id}`, "DELETE")} /* TODO: stop endpoint needs task id; simplified */
-          onProvideInput={() => { /* resume via task continue — item 26 */ }}
+          onStop={async () => { if (agent.current_task_id) { await call(`/api/tasks/${agent.current_task_id}/stop`, "POST"); setSel({ kind: "agent", id: agent.id }); } }}
+          onProvideInput={async (text) => { if (agent.current_task_id) { await call(`/api/tasks/${agent.current_task_id}/continue`, "POST", { input: text }); setSel({ kind: "agent", id: agent.id }); } }}
           onRemove={() => setConfirm({ title: "Remove agent?", body: `${agent.name} will be removed.`, run: async () => { await call(`/api/agents/${agent.id}`, "DELETE"); close(); } })} />
         {confirmEl()}
       </>

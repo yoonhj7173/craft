@@ -16,7 +16,9 @@ const TEAM: TeamPanelData = {
 };
 const AGENT: AgentPanelData = {
   id: "a2", team_id: "t1", name: "QA", role_instructions: "You are a QA engineer. Verify real behavior by running the app.", model_tier: "medium",
-  status: "needs-input", tokens_total: 9120, outgoing: { id: "e1", to_agent_id: "a1", to_agent_name: "SWE", type: "review_loop", max_iterations: 5 }, incoming: [],
+  status: "needs-input", tokens_total: 9120,
+  current_task_id: "task-1", awaiting_prompt: "Which database should I assume — Postgres or SQLite?", error_summary: null,
+  outgoing: { id: "e1", to_agent_id: "a1", to_agent_name: "SWE", type: "review_loop", max_iterations: 5 }, incoming: [],
 };
 const ROLES: RoleTemplate[] = [
   { role_key: "swe", display_name: "Software Engineer", default_tier: "strong", is_starter: true, default_output_type: null, default_output_target_role_key: null, default_max_iterations: null },

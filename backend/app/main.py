@@ -14,9 +14,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 from app.config import settings
 from app.logging_config import configure_logging, get_logger
+
+# 레이트 리밋 — per-IP 전역 기본(남용/스팸 베이스라인). 채널별 세부는 P1.
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 from app.routers import (
     auth_demo,
     chat,
@@ -58,12 +65,17 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="cursor-pm backend", version="0.1.0", lifespan=lifespan)
 
+    # 레이트 리밋(per-IP 전역). 초과 시 429.
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
+        allow_origins=settings.cors_origin_list,  # 명시적 origin 화이트리스트(와일드카드 아님).
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     # 시스템 라우터는 prefix 없이 루트에 마운트(/health, /ready).

@@ -12,7 +12,9 @@ export interface EdgeRef { id: string; to_agent_id: string; to_agent_name: strin
 
 export interface AgentPanelData {
   id: string; team_id: string; name: string; role_instructions: string; model_tier: string;
-  status: AgentStatus; tokens_total: number; outgoing: EdgeRef | null; incoming: EdgeRef[];
+  status: AgentStatus; tokens_total: number;
+  current_task_id: string | null; awaiting_prompt: string | null; error_summary: string | null;
+  outgoing: EdgeRef | null; incoming: EdgeRef[];
 }
 
 export interface RoleTemplate {

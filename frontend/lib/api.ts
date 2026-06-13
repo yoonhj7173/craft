@@ -18,8 +18,18 @@ export async function apiFetch<T>(
     },
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
+    // 4xx(클라이언트/검증)는 백엔드 detail이 유저용 메시지(예: "desks are full") → 노출.
+    // 5xx(서버)는 내부 정보 누출 방지 → 일반 메시지(상세는 콘솔/서버 로그에만).
+    if (res.status >= 500) {
+      console.error("server error", res.status, await res.text().catch(() => ""));
+      throw new Error("Something went wrong. Please try again.");
+    }
+    let detail = "";
+    try {
+      const j = await res.json();
+      detail = typeof j?.detail === "string" ? j.detail : "";
+    } catch { /* non-JSON */ }
+    throw new Error(detail || `Request failed (${res.status})`);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

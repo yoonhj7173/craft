@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth import TenantScope, require_user, tenant_scope
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 
 class ChatIn(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=8000)
 
 
 class ChatOut(BaseModel):

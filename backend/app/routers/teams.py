@@ -273,9 +273,21 @@ def get_agent(
 
 
 def _agent_panel(db: Session, agent: Agent) -> AgentPanelOut:
+    from app.models import Task
+
     status_by_agent = agent_status_map(db, agent.project_id)
     outgoing_edge = db.query(Edge).filter(Edge.from_agent_id == agent.id).first()
     incoming_edges = db.query(Edge).filter(Edge.to_agent_id == agent.id).all()
+    # 현재 활성 task(Stop/Provide-input 대상) — 활성이 없으면 최신 task(에러 표시용).
+    active = (
+        db.query(Task)
+        .filter(Task.agent_id == agent.id, Task.status.in_(("queued", "working", "blocked", "needs-input")))
+        .order_by(Task.created_at.desc())
+        .first()
+    )
+    latest = active or (
+        db.query(Task).filter(Task.agent_id == agent.id).order_by(Task.created_at.desc()).first()
+    )
     return AgentPanelOut(
         id=agent.id,
         team_id=agent.team_id,
@@ -283,7 +295,10 @@ def _agent_panel(db: Session, agent: Agent) -> AgentPanelOut:
         role_instructions=agent.role_instructions,
         model_tier=agent.model_tier,
         status=status_by_agent.get(agent.id, "idle"),
-        tokens_total=0,  # item 10/12에서 연결.
+        tokens_total=int(latest.tokens_in + latest.tokens_out) if latest else 0,
+        current_task_id=active.id if active else None,
+        awaiting_prompt=active.awaiting_prompt if active else None,
+        error_summary=latest.error_summary if latest and latest.status == "failed" else None,
         outgoing=_edge_ref(db, outgoing_edge) if outgoing_edge else None,
         incoming=[_edge_ref(db, e) for e in incoming_edges],
     )

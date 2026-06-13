@@ -74,6 +74,15 @@ def client(stub_jwks):
 
 
 @pytest.fixture(autouse=True)
+def _disable_rate_limit():
+    """테스트는 레이트 리밋 비활성(다수 요청이 429로 flaky해지지 않게). 리밋 자체는 별도 검증."""
+    from app.main import limiter
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
+
+
+@pytest.fixture(autouse=True)
 def _force_local_sandbox():
     """테스트는 절대 실 E2B를 치지 않는다 — E2B_API_KEY가 있어도 워크스페이스 싱글턴을 Local로 강제."""
     from app.services.sandbox import LocalSandboxProvider

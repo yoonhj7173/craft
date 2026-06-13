@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth import TenantScope, tenant_scope
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api", tags=["tasks"])
 
 
 class ContinueIn(BaseModel):
-    input: str
+    input: str = Field(min_length=1, max_length=8000)
 
 
 def _load_owned_task(db: Session, scope: TenantScope, task_id: uuid.UUID) -> Task:

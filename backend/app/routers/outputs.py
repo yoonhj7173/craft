@@ -143,7 +143,9 @@ def download_task_zip(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for r in rows:
-            zf.writestr(r.path, filestore.get_bytes(r))
+            # zip-slip 방어(이중) — 안전하지 않은 경로는 basename으로 평탄화.
+            safe = r.path if (r.path and not r.path.startswith("/") and ".." not in r.path.split("/") and "\\" not in r.path) else r.path.rsplit("/", 1)[-1]
+            zf.writestr(safe, filestore.get_bytes(r))
     buf.seek(0)
     return StreamingResponse(
         buf,

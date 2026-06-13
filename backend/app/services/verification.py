@@ -104,6 +104,13 @@ def _is_text_path(path: str, data: bytes) -> bool:
         return False
 
 
+def _is_safe_path(path: str) -> bool:
+    """zip-slip/경로탈출 방지 — 절대경로·'..'·백슬래시 금지."""
+    if not path or path.startswith("/") or "\\" in path:
+        return False
+    return ".." not in path.split("/")
+
+
 def collect_outputs(db: Session, task: Task, provider: SandboxProvider, sandbox_id: str,
                     *, since_mtime: float = 0.0) -> int:
     """변경 파일(mtime >= since_mtime)을 ignore 규칙 적용해 outputs 행으로 수집. 행 수 반환."""
@@ -111,6 +118,9 @@ def collect_outputs(db: Session, task: Task, provider: SandboxProvider, sandbox_
     n = 0
     for e in entries:
         if e.is_dir:
+            continue
+        if not _is_safe_path(e.path):  # 악성 에이전트가 쓴 '../' 등 거부(zip-slip 차단).
+            log.warning("skipped unsafe output path", extra={"path": e.path})
             continue
         if any(part in IGNORE_DIRS for part in e.path.split("/")):
             continue

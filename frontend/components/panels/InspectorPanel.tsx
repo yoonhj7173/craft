@@ -95,12 +95,13 @@ export function AgentPanel({ data, onClose, onStop, onRemove, onProvideInput }: 
       {(data.status === "needs-input" || data.status === "blocked") && (
         <div className="mt-4 rounded-xl border-2 border-status-needs-input/40 bg-status-needs-input/10 p-3">
           <Label>Provide human input</Label>
+          {data.awaiting_prompt && <p className="mt-1 text-sm font-bold text-ink-soft">{data.awaiting_prompt}</p>}
           <textarea value={input} onChange={(e) => setInput(e.target.value)} className="mt-1 w-full rounded-lg border border-white bg-white/70 p-2 text-sm outline-none" rows={2} placeholder="Answer the agent's question…" />
           <PillButton variant="confirm" className="mt-2 w-full" onClick={() => onProvideInput(input)}>Send &amp; resume</PillButton>
         </div>
       )}
       {data.status === "failed" && (
-        <div className="mt-4 rounded-xl border-2 border-status-failed/40 bg-status-failed/10 p-3 text-sm text-status-failed">Error — see verification / retry.</div>
+        <div className="mt-4 rounded-xl border-2 border-status-failed/40 bg-status-failed/10 p-3 text-sm text-status-failed">{data.error_summary || "Failed — retry or check the verification record."}</div>
       )}
 
       <div className="mt-5 flex flex-col gap-2">

@@ -128,14 +128,14 @@ class AgentCreate(BaseModel):
     # role_key는 모달이 프리필에 쓰는 힌트(서버는 최종 name/role/tier/output을 신뢰).
     role_key: str | None = None
     name: str = Field(min_length=1, max_length=200)
-    role_instructions: str = Field(min_length=1)
+    role_instructions: str = Field(min_length=1, max_length=20000)
     model_tier: str
     output: AgentOutputIn | None = None
 
 
 class AgentPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    role_instructions: str | None = Field(default=None, min_length=1)
+    role_instructions: str | None = Field(default=None, min_length=1, max_length=20000)
     model_tier: str | None = None
 
 
@@ -187,6 +187,10 @@ class AgentPanelOut(BaseModel):
     model_tier: str
     status: str
     tokens_total: int
+    # 현재 활성 task(있으면) — Stop/Provide-input 동작에 필요(D16/D22).
+    current_task_id: uuid.UUID | None = None
+    awaiting_prompt: str | None = None
+    error_summary: str | None = None
     # 출력 연결(최대 1개, D38) + 들어오는 연결(참고용).
     outgoing: EdgeRefOut | None
     incoming: list[EdgeRefOut]
