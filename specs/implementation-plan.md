@@ -1,15 +1,24 @@
 # Implementation Plan v3
 
-> Updated 2026-06-13 against PRD v2 + tech-design v3 (decision-log D1–D39). Two tracks per D28: **Track 1 (app)** and **Track 2 (execution engine)** — Track 2 items are independent of Track 1 frontend and can proceed in parallel after item 5. Each item is a single testable unit completable in one software_engineer run; check off as completed. **Frontend (19–26) recreates `claude-design-handoff/product/` in our stack (Pixi world + React HUD) — that README is the visual source of truth (D36); landing/blog moved to item 27, out of current scope.**
+> Updated 2026-06-13 against PRD v2 + tech-design v3 (decision-log D1–D44). Two tracks per D28: **Track 1 (app)** and **Track 2 (execution engine)** — Track 2 items are independent of Track 1 frontend and can proceed in parallel after item 5. Each item is a single testable unit; check off as completed. **Frontend (19–26) recreates `claude-design-handoff/product/` in our stack (Pixi world + React HUD) — that README is the visual source of truth (D36); landing/blog moved to item 27, out of current scope.**
 >
-> Items 1–4 were completed against the v1 spec and remain valid foundations (continuation runner, app skeleton, auth/tenancy); item 3's v1 schema is superseded by item 5. **Feature tests must verify real behavior against live infra (Postgres/Redis via docker-compose; real E2B for Track 2), not just builds.**
+> **Build order (unchanged, deliberate):** backend data layer + services (5–13) → execution engine (14–18, parallelizable after 5) → frontend (19–26) → deferred landing/blog (27). Frontend follows backend because every screen consumes a real API. **Feature tests must verify real behavior against live infra (Postgres/Redis via docker-compose; real E2B for Track 2), not just builds.**
 
-## Done (v1 foundations)
+## v1 foundations — what actually survives vs gets reworked
 
-- [x] 1. **CrewAI continuation spike** — re-enqueue-with-context + `AWAITING_INPUT` sentinel, mocked Claude (9/9 tests). Core reused by items 10–11 and the review-loop protocol; sentinel contract shared by the dev-runner (item 16).
-- [x] 2. **Backend project setup** — FastAPI skeleton, config.py, db.py, `/health`+`/ready`, structured logging.
-- [x] 3. **Database schema + seed (v1)** — superseded by item 5; Alembic infra carries over.
-- [x] 4. **Auth + tenancy middleware** — Clerk JWT verification, `require_user`, `TenantScope`. Item 5 extends scoping to projects.
+The backend was built against the **v1 spec** (`clusters`/`units`). Auditing it against v3 (D5–D44):
+
+**Truly reusable (stack-level, ~550 LOC — keep):**
+- [x] **App skeleton** (was item 2) — FastAPI, `config.py`, `db.py`, `/health`+`/ready`, structured logging. Stack-level, unaffected by the data-model change.
+- [x] **Auth + tenancy** (was item 4) — Clerk JWT, `require_user`, `TenantScope` (`auth.py`). Item 5/6 extends scoping to projects.
+- [x] **Continuation mechanism** (was item 1) — the re-enqueue + `AWAITING_INPUT` sentinel logic in `crews/base.py` (9/9 tests). The *mechanism* is reused by items 10–11/16; the v1 `factory.py` that builds from `units` rows is rewritten at item 10.
+
+**v1 code replaced starting at item 5 (~680 LOC — do NOT treat as done):**
+- `models.py` (Cluster/Unit/Task/Notification/Config v1), `schemas.py`, the v1 Alembic migration, `seed.py` v1 → **item 5** (clean v3 reset migration — see note).
+- `routers/units.py`, `routers/map.py` → **items 6–7** (projects/teams/agents/edges/map).
+- `crews/factory.py` (v1) → **item 10**. Tests `test_map_units`, `test_schema_seed` → rewritten alongside.
+
+> **Item 5 migration note (no prod data):** since v1 has only dev seed data, do **not** stack a "replace" migration on top of the v1 one — **reset to a single clean v3 initial migration** (drop the v1 `adca1261107f`, author one v3 `initial_schema`). Cleaner history, no dead intermediate state.
 
 ## Track 1 — App backend
 
