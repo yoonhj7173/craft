@@ -243,8 +243,10 @@ def delete_project(
     db: Session = Depends(get_db),
 ) -> None:
     project = load_owned_project(db, scope, project_id)
+    # 샌드박스 파기(D29) — DB cascade 전에 워크스페이스 정리.
+    from app.services.workspace import workspace_service
+    workspace_service.destroy(db, project)
     # FK ON DELETE CASCADE가 teams/agents/edges/tasks/outputs 등 하위를 정리한다.
-    # 샌드박스 destroy(D29)는 WorkspaceService 도입(item 15) 후 연결; 지금은 sandbox_id 없음.
     db.delete(project)
     db.commit()
 
