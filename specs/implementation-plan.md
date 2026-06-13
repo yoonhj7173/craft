@@ -42,7 +42,7 @@ The backend was built against the **v1 spec** (`clusters`/`units`). Auditing it 
 
 ## Track 2 — Execution engine (parallel after item 5)
 
-- [ ] 14. **SandboxProvider + E2B adapter** — interface (create/pause/resume/destroy/exec/read/write/file_tree) + E2B implementation + 2 runtime templates (Node 22 + Playwright, Python 3.12); registry-allowlist egress config; exec timeouts. **Verify (live E2B):** contract test creates sandbox → runs commands → writes/reads files → pause/resume preserves state → destroy; disallowed egress blocked; hung command killed by timeout.
+- [x] 14. **SandboxProvider + E2B adapter** — interface (create/pause/resume/destroy/exec/read/write/file_tree) + E2B implementation + 2 runtime templates (Node 22 + Playwright, Python 3.12); registry-allowlist egress config; exec timeouts. **Verify (live E2B):** contract test creates sandbox → runs commands → writes/reads files → pause/resume preserves state → destroy; disallowed egress blocked; hung command killed by timeout.
 
 - [ ] 15. **WorkspaceService + lifecycle** — `ensure_running` (lazy create per project, resume if paused), `pause_if_idle`, `kill_current`, `destroy`; `projects.sandbox_id/status` bookkeeping; boot/resume failure → clean task failure + `error` status + recreate path. **Verify (live):** first dev task creates, second reuses; idle → paused (E2B billing stops); kill/recreate paths work; project delete destroys sandbox.
 

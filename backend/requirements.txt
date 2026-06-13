@@ -24,6 +24,10 @@ celery==5.4.0
 # --- Item 13: orchestrator LLM layer (LiteLLM, D26) ---
 litellm==1.61.20
 
+# --- Item 14: E2B sandbox (production execution isolation, D29) ---
+# Requires E2B_API_KEY. Until set, LocalSandboxProvider (dev/test only) is used.
+# e2b==1.0.5
+
 # --- Test ---
 pytest==9.0.3
 httpx==0.28.1
