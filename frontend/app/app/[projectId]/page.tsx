@@ -9,6 +9,7 @@ import { useStore } from "@/lib/store";
 import { connectSSE } from "@/lib/sse";
 import type { MapData } from "@/lib/map/types";
 import Hud from "@/components/hud/Hud";
+import { PanelController, type Selection } from "@/components/panels/PanelController";
 
 const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), { ssr: false });
 
@@ -16,15 +17,21 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
   const { getToken } = useAuth();
   const [data, setData] = useState<MapData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sel, setSel] = useState<Selection>({ kind: "none" });
+
+  async function loadMap() {
+    const token = await getToken();
+    const map = await apiFetch<MapData>(`/api/projects/${params.projectId}/map`, { token });
+    useStore.getState().setSnapshot(map);
+    setData(map);
+  }
 
   useEffect(() => {
     let disconnect: (() => void) | null = null;
     (async () => {
       try {
+        await loadMap();
         const token = await getToken();
-        const map = await apiFetch<MapData>(`/api/projects/${params.projectId}/map`, { token });
-        useStore.getState().setSnapshot(map); // 스냅샷을 store로(글로우/칩/피드 소스)
-        setData(map);
         if (token) disconnect = connectSSE(params.projectId, token); // 라이브 SSE
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load map");
@@ -58,15 +65,21 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
         data={data}
         callbacks={{
           onRoomMoved: persistRoom,
-          onSelectAgent: (id) => console.log("agent", id), // 패널은 item 24
-          onSelectTeam: (id) => console.log("team", id),
+          onSelectAgent: (id) => setSel({ kind: "agent", id }),
+          onSelectTeam: (id) => setSel({ kind: "team", id }),
+          onDeselect: () => setSel({ kind: "none" }),
         }}
       />
       <Hud
         projectName={data.project.name}
         onSend={sendChat}
-        onOpen={(w) => console.log("open", w)} // 오버레이/모달은 item 24-25
+        onFocusAgent={(id) => setSel({ kind: "agent", id })}
+        onOpen={(w) => {
+          if (w === "addTeam") setSel({ kind: "addTeam" });
+          else console.log("open", w); // board/settings/outputs = item 25
+        }}
       />
+      <PanelController projectId={params.projectId} getToken={getToken} mapData={data} sel={sel} setSel={setSel} onChanged={loadMap} />
     </div>
   );
 }
