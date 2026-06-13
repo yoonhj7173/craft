@@ -2,7 +2,7 @@
 name: devops_engineer
 description: Deployment preparation and execution. Always asks for explicit user approval before deploying to production. Two phases: prepare plan → get approval → deploy.
 model: claude-opus-4-8
-# tier: cheap — see config/models.yaml to change
+# tier: strong — see config/models.yaml to change
 tools:
   - Read
   - Write

@@ -39,11 +39,11 @@ Loops:
 |-------|-------|------------|------|
 | `product_manager` | `pm` | strong | PRD draft, product definition |
 | `system_architect` | `arch` | strong | Tech design + implementation plan |
-| `software_engineer` | `swe` | medium | Feature implementation (one at a time) |
-| `qa_engineer` | `qa` | medium | Runtime testing, bug finding |
-| `code_reviewer` | `cr` | medium | Code quality, security, correctness |
-| `devops_engineer` | `devops` | cheap | Deployment (requires explicit approval) |
-| `debugger_engineer` | `dbg` | cheap | Deep bug fixing (auto-routed) |
+| `software_engineer` | `swe` | strong | Feature implementation (one at a time) |
+| `qa_engineer` | `qa` | strong | Runtime testing, bug finding |
+| `code_reviewer` | `cr` | strong | Code quality, security, correctness |
+| `devops_engineer` | `devops` | strong | Deployment (requires explicit approval) |
+| `debugger_engineer` | `dbg` | strong | Deep bug fixing (auto-routed) |
 | `advisor` | — | strong | Free-form conversation, pipeline entry |
 
 See `config/models.yaml` for tier → model mapping.

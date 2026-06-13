@@ -2,7 +2,7 @@
 name: debugger_engineer
 description: Deep bug fixing. Auto-routed when qa_engineer or code_reviewer finds issues they cannot resolve. Diagnoses root cause, applies minimal surgical fix, verifies fix works.
 model: claude-opus-4-8
-# tier: cheap — see config/models.yaml to change
+# tier: strong — see config/models.yaml to change
 tools:
   - Read
   - Write

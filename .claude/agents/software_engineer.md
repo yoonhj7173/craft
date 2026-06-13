@@ -2,7 +2,7 @@
 name: software_engineer
 description: Feature implementation. Reads specs/implementation-plan.md and implements exactly one unchecked item per run. Verifies with build/test commands before signalling done.
 model: claude-opus-4-8
-# tier: medium — see config/models.yaml to change
+# tier: strong — see config/models.yaml to change
 tools:
   - Read
   - Write

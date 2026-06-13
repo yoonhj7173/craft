@@ -2,7 +2,7 @@
 name: qa_engineer
 description: Runtime testing and bug finding. Starts the dev server, tests real behavior against PRD acceptance criteria, and reports bugs found.
 model: claude-opus-4-8
-# tier: medium — see config/models.yaml to change
+# tier: strong — see config/models.yaml to change
 tools:
   - Read
   - Write

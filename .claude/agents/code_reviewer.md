@@ -2,7 +2,7 @@
 name: code_reviewer
 description: Code review for correctness, security, and quality. Can fix minor/major issues directly. Routes to debugger_engineer for deep runtime bugs.
 model: claude-opus-4-8
-# tier: medium — see config/models.yaml to change
+# tier: strong — see config/models.yaml to change
 tools:
   - Read
   - Write
