@@ -1,0 +1,323 @@
+"""Projects API + template cloning — tech-design §6 (item 6).
+
+엔드포인트:
+- GET  /api/templates                  팀 템플릿 + 역할 카탈로그(D41) 노출(온보딩/Add-agent 프리필)
+- POST /api/projects                   트랜잭션 클론: project + 선택 팀마다 starter 1명(D37)
+- GET  /api/projects                   유저 프로젝트 목록(스위처)
+- GET  /api/projects/{id}              단건
+- PATCH/DELETE /api/projects/{id}      이름변경 / 삭제(cascade)
+- POST /api/projects/{id}/pause|resume paused 토글(D16)
+- GET  /api/projects/{id}/map          맵 투영(teams+agents w/ status+tier, edges, paused)
+
+소유권: 모든 프로젝트 접근은 TenantScope로 user_id를 확인하고, 아니면 404(존재 은폐).
+클론은 D37대로 팀당 starter 에이전트 1개만 만든다(혼자라 엣지 없음, D38).
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.auth import TenantScope, require_user, tenant_scope
+from app.db import get_db
+from app.models import (
+    Agent,
+    AgentTemplate,
+    Edge,
+    Project,
+    Task,
+    Team,
+    TeamTemplate,
+    UserProfile,
+)
+from app.schemas import (
+    AgentMapOut,
+    EdgeMapOut,
+    MapOut,
+    ProjectCreate,
+    ProjectOut,
+    ProjectPatch,
+    RoleTemplateOut,
+    TeamMapOut,
+    TemplateOut,
+)
+
+router = APIRouter(prefix="/api", tags=["projects"])
+
+# 맵에 노출하는 활성 상태 — terminal(done)은 idle로, failed는 유지(D23).
+_ACTIVE_STATUSES = {"queued", "working", "blocked", "needs-input", "failed"}
+
+# 초기 방 배치(2열 그리드). 이후 드래그로 변경(D39).
+_ROOM_COL_W = 480
+_ROOM_ROW_H = 420
+
+
+def _load_owned_project(db: Session, scope: TenantScope, project_id: uuid.UUID) -> Project:
+    """소유한 프로젝트를 로드하거나 404. 교차 사용자는 존재를 은폐(404)."""
+    project = db.get(Project, project_id)
+    if project is None or not scope.owns(project):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+def _agent_status_map(db: Session, project_id: uuid.UUID) -> dict[uuid.UUID, str]:
+    """프로젝트 에이전트별 현재 상태 = 최신 task 상태(active만), 없으면 idle.
+
+    item 8(TaskService) 전에는 task가 없어 전부 idle. 로직은 이후에도 정확하다.
+    """
+    # 에이전트별 최신 task 시각.
+    subq = (
+        db.query(Task.agent_id, func.max(Task.created_at).label("mx"))
+        .filter(Task.project_id == project_id)
+        .group_by(Task.agent_id)
+        .subquery()
+    )
+    rows = (
+        db.query(Task.agent_id, Task.status)
+        .join(
+            subq,
+            (Task.agent_id == subq.c.agent_id) & (Task.created_at == subq.c.mx),
+        )
+        .all()
+    )
+    return {
+        agent_id: (status if status in _ACTIVE_STATUSES else "idle")
+        for agent_id, status in rows
+    }
+
+
+def _build_map(db: Session, project: Project) -> MapOut:
+    """프로젝트를 맵 투영으로 직렬화한다."""
+    status_by_agent = _agent_status_map(db, project.id)
+
+    teams = (
+        db.query(Team)
+        .filter(Team.project_id == project.id)
+        .order_by(Team.created_at)
+        .all()
+    )
+    template_engine = {
+        t.key: t.engine for t in db.query(TeamTemplate).all()
+    }
+
+    team_outs: list[TeamMapOut] = []
+    for team in teams:
+        agent_outs = [
+            AgentMapOut(
+                id=a.id,
+                name=a.name,
+                model_tier=a.model_tier,
+                slot=a.slot,
+                status=status_by_agent.get(a.id, "idle"),
+            )
+            for a in sorted(team.agents, key=lambda x: x.slot)
+        ]
+        team_outs.append(
+            TeamMapOut(
+                id=team.id,
+                name=team.name,
+                template_key=team.template_key,
+                engine=template_engine.get(team.template_key, "crew"),
+                room_x=team.room_x,
+                room_y=team.room_y,
+                agents=agent_outs,
+            )
+        )
+
+    edges = db.query(Edge).filter(Edge.project_id == project.id).all()
+    edge_outs = [EdgeMapOut.model_validate(e) for e in edges]
+
+    return MapOut(
+        project=ProjectOut.model_validate(project),
+        paused=project.paused,
+        teams=team_outs,
+        edges=edge_outs,
+    )
+
+
+# --- Templates ---
+
+
+@router.get("/templates", response_model=list[TemplateOut])
+def list_templates(
+    user_id: str = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> list[TemplateOut]:
+    """팀 템플릿 + 역할 카탈로그(D41). 앱은 auth-gated(D24) — 세션 필요(내용은 전역 시드로 동일)."""
+    templates = db.query(TeamTemplate).order_by(TeamTemplate.key).all()
+    out: list[TemplateOut] = []
+    for t in templates:
+        roles = [
+            RoleTemplateOut.model_validate(r)
+            for r in sorted(t.agent_templates, key=lambda r: (not r.is_starter, r.role_key))
+        ]
+        out.append(
+            TemplateOut(
+                key=t.key,
+                name=t.name,
+                description=t.description,
+                engine=t.engine,
+                roles=roles,
+            )
+        )
+    return out
+
+
+# --- Projects ---
+
+
+@router.post("/projects", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
+def create_project(
+    body: ProjectCreate,
+    user_id: str = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> ProjectOut:
+    """프로젝트를 트랜잭션으로 클론한다.
+
+    선택한 각 팀 템플릿마다 team + starter 에이전트 1개(is_starter 역할, tier=템플릿 기본).
+    starter는 혼자라 엣지는 만들지 않는다(D37/D38). 잘못된 template_key는 400 + 전체 롤백.
+    """
+    templates = {
+        t.key: t for t in db.query(TeamTemplate).filter(TeamTemplate.key.in_(body.template_keys)).all()
+    }
+    missing = [k for k in body.template_keys if k not in templates]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Unknown template(s): {missing}")
+
+    try:
+        # display_name이 오면 user_profile upsert(온보딩 step 2).
+        if body.display_name:
+            profile = db.get(UserProfile, user_id)
+            if profile is None:
+                db.add(UserProfile(user_id=user_id, display_name=body.display_name))
+            else:
+                profile.display_name = body.display_name
+
+        project = Project(user_id=user_id, name=body.name)
+        db.add(project)
+        db.flush()
+
+        # 선택 순서대로 팀을 2열 그리드에 배치.
+        for idx, key in enumerate(body.template_keys):
+            tmpl = templates[key]
+            team = Team(
+                project_id=project.id,
+                template_key=key,
+                name=tmpl.name,
+                room_x=(idx % 2) * _ROOM_COL_W,
+                room_y=(idx // 2) * _ROOM_ROW_H,
+            )
+            db.add(team)
+            db.flush()
+
+            starter = next((r for r in tmpl.agent_templates if r.is_starter), None)
+            if starter is None:  # 시드 불변식 위반 방어(팀당 starter 1개).
+                raise HTTPException(status_code=500, detail=f"Template {key} has no starter role")
+            db.add(
+                Agent(
+                    team_id=team.id,
+                    project_id=project.id,
+                    name=starter.display_name,
+                    role_instructions=starter.role_instructions,
+                    model_tier=starter.default_tier,
+                    slot=0,
+                )
+            )
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+    db.refresh(project)
+    return ProjectOut.model_validate(project)
+
+
+@router.get("/projects", response_model=list[ProjectOut])
+def list_projects(
+    scope: TenantScope = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+) -> list[ProjectOut]:
+    """유저 프로젝트 목록(스위처용, 최신순)."""
+    rows = (
+        scope.query(db, Project).order_by(Project.created_at.desc()).all()
+    )
+    return [ProjectOut.model_validate(p) for p in rows]
+
+
+@router.get("/projects/{project_id}", response_model=ProjectOut)
+def get_project(
+    project_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+) -> ProjectOut:
+    return ProjectOut.model_validate(_load_owned_project(db, scope, project_id))
+
+
+@router.patch("/projects/{project_id}", response_model=ProjectOut)
+def rename_project(
+    project_id: uuid.UUID,
+    body: ProjectPatch,
+    scope: TenantScope = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+) -> ProjectOut:
+    project = _load_owned_project(db, scope, project_id)
+    project.name = body.name
+    db.commit()
+    db.refresh(project)
+    return ProjectOut.model_validate(project)
+
+
+@router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(
+    project_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+) -> None:
+    project = _load_owned_project(db, scope, project_id)
+    # FK ON DELETE CASCADE가 teams/agents/edges/tasks/outputs 등 하위를 정리한다.
+    # 샌드박스 destroy(D29)는 WorkspaceService 도입(item 15) 후 연결; 지금은 sandbox_id 없음.
+    db.delete(project)
+    db.commit()
+
+
+@router.post("/projects/{project_id}/pause", response_model=ProjectOut)
+def pause_project(
+    project_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+) -> ProjectOut:
+    project = _load_owned_project(db, scope, project_id)
+    project.paused = True
+    db.commit()
+    db.refresh(project)
+    return ProjectOut.model_validate(project)
+
+
+@router.post("/projects/{project_id}/resume", response_model=ProjectOut)
+def resume_project(
+    project_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+) -> ProjectOut:
+    project = _load_owned_project(db, scope, project_id)
+    project.paused = False
+    db.commit()
+    db.refresh(project)
+    return ProjectOut.model_validate(project)
+
+
+@router.get("/projects/{project_id}/map", response_model=MapOut)
+def get_map(
+    project_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    db: Session = Depends(get_db),
+) -> MapOut:
+    project = _load_owned_project(db, scope, project_id)
+    return _build_map(db, project)
