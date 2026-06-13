@@ -10,6 +10,7 @@ import { connectSSE } from "@/lib/sse";
 import type { MapData } from "@/lib/map/types";
 import Hud from "@/components/hud/Hud";
 import { PanelController, type Selection } from "@/components/panels/PanelController";
+import { BoardOverlay, OutputsOverlay, SettingsOverlay, type OverlayKind } from "@/components/overlays/Overlays";
 
 const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), { ssr: false });
 
@@ -18,6 +19,7 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
   const [data, setData] = useState<MapData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Selection>({ kind: "none" });
+  const [overlay, setOverlay] = useState<OverlayKind>(null);
 
   async function loadMap() {
     const token = await getToken();
@@ -76,10 +78,13 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
         onFocusAgent={(id) => setSel({ kind: "agent", id })}
         onOpen={(w) => {
           if (w === "addTeam") setSel({ kind: "addTeam" });
-          else console.log("open", w); // board/settings/outputs = item 25
+          else setOverlay(w);
         }}
       />
       <PanelController projectId={params.projectId} getToken={getToken} mapData={data} sel={sel} setSel={setSel} onChanged={loadMap} />
+      {overlay === "board" && <BoardOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} onFocus={(id) => { setOverlay(null); setSel({ kind: "agent", id }); }} />}
+      {overlay === "outputs" && <OutputsOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} />}
+      {overlay === "settings" && <SettingsOverlay projectId={params.projectId} getToken={getToken} projectName={data.project.name} paused={data.paused} onClose={() => setOverlay(null)} onChanged={loadMap} />}
     </div>
   );
 }
