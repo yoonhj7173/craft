@@ -21,7 +21,8 @@ export function connectSSE(projectId: string, token: string): () => void {
 
   function open() {
     if (closed) return;
-    // EventSource는 헤더를 못 실어서 ?token= 사용(백엔드 auth가 지원).
+    // EventSource는 헤더를 못 실어서 ?token= 사용(백엔드 auth가 지원). 토큰이 URL에 노출되는
+    // 트레이드오프는 Clerk JWT가 단명(short-lived)이라 영향 제한적; P1에 단기 SSE 전용 토큰 고려.
     es = new EventSource(`${base}/api/projects/${projectId}/sse?token=${encodeURIComponent(token)}`);
     es.onopen = () => useStore.getState().setConnected(true);
     es.onmessage = (e) => {
