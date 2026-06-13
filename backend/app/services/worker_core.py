@@ -80,7 +80,10 @@ def _append_memory(db: Session, agent_id, output: str) -> None:
         db.rollback()
 
 
-def _finish_done(db: Session, task: Task, output: str, model: str, tokens_in: int, tokens_out: int, cfg) -> None:
+def _finish_done(db: Session, task: Task, output: str, model: str, tokens_in: int, tokens_out: int, cfg) -> list:
+    """done 전이 + 아웃풋 + 메모리 + 그래프 전파를 한 트랜잭션으로 커밋. 새 child id 반환."""
+    from app.services import graph_engine
+
     cost = cost_usd(cfg, model, tokens_in, tokens_out)
     ts.transition(
         db, task, "done",
@@ -88,18 +91,20 @@ def _finish_done(db: Session, task: Task, output: str, model: str, tokens_in: in
         tokens_in=tokens_in, tokens_out=tokens_out, est_cost_usd=cost,
     )
     # 결과를 단일 마크다운 아웃풋 파일로 저장(텍스트팀).
-    agent = db.get(Agent, task.agent_id)
     db.add(Output(
         project_id=task.project_id, agent_id=task.agent_id, task_id=task.id,
         path="output.md", mime="text/markdown", size_bytes=len(output.encode("utf-8")),
         content=output, content_bytes=None,
     ))
     _append_memory(db, task.agent_id, output)
+    # 그래프 전파(완료와 같은 트랜잭션, dedup으로 재배달 안전).
+    new_ids = [n for n in graph_engine.propagate(db, task) if n is not None]
     db.commit()
     _publish_usage(task.project_id, task.agent_id, tokens_in, tokens_out, cost)
+    return new_ids
 
 
-def process_task(db: Session, task_id: uuid.UUID, *, llm=None) -> str:
+def process_task(db: Session, task_id: uuid.UUID, *, llm=None, enqueue=None) -> str:
     """task 1건을 처리하고 최종 상태 문자열을 반환한다(테스트/관측용).
 
     반환: "not_found" | "skipped:<status>" | "not_dispatched" | "done" | "needs-input" | "failed".
@@ -156,7 +161,13 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None) -> str:
         _publish_usage(task.project_id, task.agent_id, tokens_in, tokens_out, cost)
         return "needs-input"
 
-    _finish_done(db, task, output, model, tokens_in, tokens_out, cfg)
+    new_ids = _finish_done(db, task, output, model, tokens_in, tokens_out, cfg)
+    # 다운스트림 child를 워커 큐에 넣는다(커밋 후). 기본은 Celery, 테스트는 collector 주입.
+    if new_ids:
+        if enqueue is None:
+            from app.celery_app import enqueue_task as enqueue
+        for nid in new_ids:
+            enqueue(nid)
     return "done"
 
 
