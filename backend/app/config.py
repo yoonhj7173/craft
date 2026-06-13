@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
+    # --- Execution sandbox (E2B, D29) — 없으면 LocalSandboxProvider 폴백(dev only) ---
+    e2b_api_key: str = Field(default="", alias="E2B_API_KEY")
+
     # --- Concurrency / cost guardrails (tech-design §5 config, §12 concurrency) ---
     concurrency_cap: int = Field(default=3, alias="CONCURRENCY_CAP")
     daily_cost_cap_usd: float = Field(default=10.0, alias="DAILY_COST_CAP_USD")

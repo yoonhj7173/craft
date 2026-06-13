@@ -130,79 +130,106 @@ class LocalSandboxProvider:
 
 
 class E2BSandboxProvider:
-    """프로덕션 — E2B Firecracker microVM(D29). E2B_API_KEY 필요. SDK 지연 import.
+    """프로덕션 — E2B Firecracker microVM(D29/SDK 2.28). E2B_API_KEY 필요. SDK 지연 import.
 
-    라이브 검증(item 14 verify)은 키가 있어야 가능. 인터페이스는 LocalSandboxProvider로
-    계약 테스트되며, 프로덕션에서 이 어댑터로 교체된다.
+    워크스페이스 루트 = /home/user(E2B 기본 홈). 명령은 거기서 실행하고 상대경로 파일은 그
+    아래로 매핑한다. file_tree는 find로 재귀 수집(출력 mtime-diff용). 커스텀 런타임 템플릿
+    (node22-playwright)은 E2B CLI로 별도 빌드 — 미지정 시 기본 템플릿(Python/Node 포함).
     """
 
+    WORKDIR = "/home/user"
     RUNTIME_TEMPLATES = {
-        "node22-playwright": "node22-playwright",  # Node 22 + Playwright 사전설치(D31).
-        "python312": "python312",                  # Python 3.12.
+        "node22-playwright": None,  # TODO: e2b template build 후 템플릿 id. 지금은 기본.
+        "python312": None,
     }
 
     def __init__(self, api_key: str | None = None):
-        self._api_key = api_key or os.environ.get("E2B_API_KEY")
+        from app.config import settings
+        self._api_key = api_key or getattr(settings, "e2b_api_key", "") or os.environ.get("E2B_API_KEY")
         if not self._api_key:
             raise RuntimeError("E2B_API_KEY required for E2BSandboxProvider")
         self._handles: dict[str, object] = {}
 
     def _sdk(self):
-        from e2b import Sandbox  # 지연 import.
+        from e2b import Sandbox
         return Sandbox
 
+    def _abs(self, path: str) -> str:
+        return path if path.startswith("/") else f"{self.WORKDIR}/{path}"
+
     def create(self, project_id, runtime_image: str) -> str:
-        Sandbox = self._sdk()
-        template = self.RUNTIME_TEMPLATES.get(runtime_image, "python312")
-        sbx = Sandbox(template=template, api_key=self._api_key)
-        sid = sbx.sandbox_id
-        self._handles[sid] = sbx
-        return sid
+        template = self.RUNTIME_TEMPLATES.get(runtime_image)
+        sbx = self._sdk().create(template=template, api_key=self._api_key, timeout=600)
+        self._handles[sbx.sandbox_id] = sbx
+        return sbx.sandbox_id
 
     def _h(self, sandbox_id: str):
         h = self._handles.get(sandbox_id)
         if h is None:
-            Sandbox = self._sdk()
-            h = Sandbox.connect(sandbox_id, api_key=self._api_key)
+            h = self._sdk().connect(sandbox_id, api_key=self._api_key)
             self._handles[sandbox_id] = h
         return h
 
     def pause(self, sandbox_id: str) -> None:
         self._h(sandbox_id).pause()
+        self._handles.pop(sandbox_id, None)  # 재개는 connect로.
 
     def resume(self, sandbox_id: str) -> None:
-        Sandbox = self._sdk()
-        self._handles[sandbox_id] = Sandbox.resume(sandbox_id, api_key=self._api_key)
+        # E2B는 connect가 paused 샌드박스를 재개한다.
+        self._handles[sandbox_id] = self._sdk().connect(sandbox_id, api_key=self._api_key)
 
     def destroy(self, sandbox_id: str) -> None:
-        h = self._handles.pop(sandbox_id, None)
-        if h is not None:
+        h = self._handles.pop(sandbox_id, None) or self._sdk().connect(sandbox_id, api_key=self._api_key)
+        try:
             h.kill()
+        except Exception:  # noqa: BLE001
+            pass
 
     def exec(self, sandbox_id: str, cmd: str, *, timeout: int = 120, env: dict | None = None) -> ExecResult:
         h = self._h(sandbox_id)
-        res = h.commands.run(cmd, timeout=timeout, envs=env or {})
-        return ExecResult(exit_code=res.exit_code, stdout=res.stdout, stderr=res.stderr)
+        try:
+            # request_timeout > command timeout: 정상적으로 긴 명령은 HTTP가 안 끊기게.
+            r = h.commands.run(cmd, timeout=timeout, request_timeout=timeout + 60, envs=env or {}, cwd=self.WORKDIR)
+            return ExecResult(exit_code=r.exit_code, stdout=r.stdout or "", stderr=r.stderr or "")
+        except Exception as exc:  # noqa: BLE001
+            # 타임아웃: e2b TimeoutException 또는 하위 httpcore ReadTimeout 등.
+            if "Timeout" in type(exc).__name__:
+                raise SandboxTimeout(f"command timed out after {timeout}s: {cmd}") from exc
+            # 비-제로 exit는 CommandExitException(exit_code 보유) — 결과로 환원.
+            if hasattr(exc, "exit_code"):
+                return ExecResult(exit_code=getattr(exc, "exit_code"), stdout=getattr(exc, "stdout", "") or "", stderr=getattr(exc, "stderr", "") or "")
+            raise
 
     def read_file(self, sandbox_id: str, path: str) -> bytes:
-        data = self._h(sandbox_id).files.read(path)
+        data = self._h(sandbox_id).files.read(self._abs(path))
         return data.encode("utf-8") if isinstance(data, str) else data
 
     def write_file(self, sandbox_id: str, path: str, content: bytes) -> None:
-        self._h(sandbox_id).files.write(path, content)
+        self._h(sandbox_id).files.write(self._abs(path), content)
 
     def file_tree(self, sandbox_id: str, path: str = ".") -> list[FileEntry]:
-        # E2B files.list는 단일 디렉터리 — 재귀는 호출부/exec(find)로. 여기선 얕은 목록.
-        entries = self._h(sandbox_id).files.list(path)
+        # find로 재귀 수집 — %y(type) %s(size) %T@(mtime) %p(path). ignore 디렉터리는 prune.
+        base = self._abs(path) if path != "." else self.WORKDIR
+        prune = " ".join(f"-name {d} -prune -o" for d in sorted(IGNORE_DIRS))
+        cmd = f"find {base} {prune} -printf '%y\\t%s\\t%T@\\t%p\\n'"
+        res = self.exec(sandbox_id, cmd, timeout=30)
         out: list[FileEntry] = []
-        for e in entries:
-            out.append(FileEntry(path=e.path, is_dir=(e.type == "dir"), size=getattr(e, "size", 0), mtime=0.0))
+        for line in res.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) != 4:
+                continue
+            typ, size, mtime, p = parts
+            rel = p[len(base):].lstrip("/")
+            if not rel:
+                continue
+            out.append(FileEntry(path=rel, is_dir=(typ == "d"), size=int(size or 0), mtime=float(mtime or 0)))
         return out
 
 
 def get_provider() -> SandboxProvider:
     """프로덕션은 E2B(키 있으면), 없으면 Local(dev/test)로 폴백."""
-    if os.environ.get("E2B_API_KEY"):
+    from app.config import settings
+    if getattr(settings, "e2b_api_key", "") or os.environ.get("E2B_API_KEY"):
         return E2BSandboxProvider()
     log.warning("E2B_API_KEY not set — using LocalSandboxProvider (DEV/TEST ONLY, no isolation)")
     return LocalSandboxProvider()

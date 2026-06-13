@@ -73,6 +73,19 @@ def client(stub_jwks):
     app.dependency_overrides.pop(get_verifier, None)
 
 
+@pytest.fixture(autouse=True)
+def _force_local_sandbox():
+    """테스트는 절대 실 E2B를 치지 않는다 — E2B_API_KEY가 있어도 워크스페이스 싱글턴을 Local로 강제."""
+    from app.services.sandbox import LocalSandboxProvider
+    from app.services.workspace import workspace_service
+    prev = workspace_service.provider
+    workspace_service.provider = LocalSandboxProvider()
+    yield
+    for sid in list(getattr(workspace_service.provider, "_dirs", {}).keys()):
+        workspace_service.provider.destroy(sid)
+    workspace_service.provider = prev
+
+
 @pytest.fixture
 def auth(make_token):
     """`auth(sub)` → Authorization 헤더 dict. 테스트 가독성용 단축 헬퍼."""
