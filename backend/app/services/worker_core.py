@@ -14,7 +14,6 @@ mocked Claude: llm 인자로 ScriptedLLM을 주입하면 라이브 키 없이 �
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -23,8 +22,8 @@ from sqlalchemy.orm import Session
 
 from app.crews.base import _coerce_output, detect_needs_input
 from app.crews.factory import build_agent_crew
-from app.db import redis_client
 from app.models import Agent, AgentMemory, Output, Task
+from app.services import events
 from app.services import task_service as ts
 from app.services.config_store import cost_usd, load_config, model_for_tier
 from app.services.prompt import assemble_prompt
@@ -42,23 +41,6 @@ def _tokens(crew, prompt: str, output: str) -> tuple[int, int]:
     if pout == 0:
         pout = max(1, len(output) // 4)
     return pin, pout
-
-
-def _publish_usage(project_id, agent_id, tokens_in, tokens_out, cost) -> None:
-    """usage 이벤트를 project 채널로 publish(실 Redis). 실패는 무시(관측용)."""
-    try:
-        redis_client.publish(
-            f"project:{project_id}",
-            json.dumps({
-                "type": "usage",
-                "agent_id": str(agent_id),
-                "tokens_in": tokens_in,
-                "tokens_out": tokens_out,
-                "cost_usd": cost,
-            }),
-        )
-    except Exception:  # noqa: BLE001
-        log.warning("usage publish failed", extra={"project_id": str(project_id)})
 
 
 def _append_memory(db: Session, agent_id, output: str) -> None:
@@ -97,10 +79,12 @@ def _finish_done(db: Session, task: Task, output: str, model: str, tokens_in: in
         content=output, content_bytes=None,
     ))
     _append_memory(db, task.agent_id, output)
+    events.emit_terminal_notification(db, task)
     # 그래프 전파(완료와 같은 트랜잭션, dedup으로 재배달 안전).
     new_ids = [n for n in graph_engine.propagate(db, task) if n is not None]
     db.commit()
-    _publish_usage(task.project_id, task.agent_id, tokens_in, tokens_out, cost)
+    events.emit_status(task)
+    events.emit_usage(task.project_id, task.agent_id, tokens_in, tokens_out, cost)
     return new_ids
 
 
@@ -121,6 +105,7 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, enqueue=None) -> 
         db.rollback()
         return "not_dispatched"
     db.commit()
+    events.emit_status(task)  # working
 
     cfg = load_config(db)
     agent = db.get(Agent, task.agent_id)
@@ -130,7 +115,9 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, enqueue=None) -> 
     if task.engine == "agent_sdk":
         # item 18에서 WorkspaceService+dev-runner로 대체. 지금은 스텁.
         ts.transition(db, task, "failed", error_summary="dev/design execution engine not available yet (item 18)")
+        events.emit_terminal_notification(db, task)
         db.commit()
+        events.emit_status(task)
         return "failed"
 
     # crew 경로.
@@ -145,7 +132,9 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, enqueue=None) -> 
         output = _coerce_output(raw)
     except Exception as exc:  # noqa: BLE001 — 워커 경계.
         ts.transition(db, task, "failed", error_summary=f"{type(exc).__name__}: {exc}")
+        events.emit_terminal_notification(db, task)
         db.commit()
+        events.emit_status(task)
         return "failed"
 
     tokens_in, tokens_out = _tokens(crew, prompt, output)
@@ -157,8 +146,10 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, enqueue=None) -> 
             awaiting_prompt=question, result_markdown=output, model_used=model,
             tokens_in=tokens_in, tokens_out=tokens_out, est_cost_usd=cost,
         )
+        events.emit_terminal_notification(db, task)
         db.commit()
-        _publish_usage(task.project_id, task.agent_id, tokens_in, tokens_out, cost)
+        events.emit_status(task)
+        events.emit_usage(task.project_id, task.agent_id, tokens_in, tokens_out, cost)
         return "needs-input"
 
     new_ids = _finish_done(db, task, output, model, tokens_in, tokens_out, cfg)

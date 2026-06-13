@@ -238,3 +238,51 @@ class MemoryOut(BaseModel):
 
 class MemoryPut(BaseModel):
     content_md: str
+
+
+# --- Notifications / Board / Usage (item 12) ---
+
+
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    agent_id: uuid.UUID | None
+    task_id: uuid.UUID | None
+    type: str
+    message: str
+    read: bool
+
+
+class BoardTaskOut(BaseModel):
+    id: uuid.UUID
+    agent_id: uuid.UUID
+    agent_name: str
+    status: str
+    instructions: str
+
+
+class BoardGoalOut(BaseModel):
+    id: uuid.UUID | None
+    title: str
+    tasks: list[BoardTaskOut]
+
+
+class BoardOut(BaseModel):
+    goals: list[BoardGoalOut]
+
+
+class UsageBucketOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+
+
+class UsageOut(BaseModel):
+    total_tokens_in: int
+    total_tokens_out: int
+    total_cost_usd: float
+    by_team: list[UsageBucketOut]
+    by_agent: list[UsageBucketOut]

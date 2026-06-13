@@ -121,14 +121,16 @@ def test_usage_event_published(env):
     try:
         tid = _queued(db, uid, pid, aid)
         worker_core.process_task(db, tid, llm=ScriptedLLM(["done summary"]))
+        # 채널엔 task_status/notification/usage가 섞여 옴 → usage를 골라 받는다.
         got = None
         deadline = time.time() + 3
-        while time.time() < deadline:
+        while time.time() < deadline and got is None:
             msg = pubsub.get_message(timeout=1)
             if msg and msg["type"] == "message":
-                got = json.loads(msg["data"])
-                break
-        assert got is not None and got["type"] == "usage" and got["tokens_in"] > 0
+                data = json.loads(msg["data"])
+                if data.get("type") == "usage":
+                    got = data
+        assert got is not None and got["tokens_in"] > 0
     finally:
         pubsub.close()
 

@@ -24,6 +24,7 @@ from app.routers import (
     memory,
     outputs,
     projects,
+    realtime,
     system,
     teams,
 )
@@ -72,6 +73,8 @@ def create_app() -> FastAPI:
     app.include_router(context.router)
     app.include_router(outputs.router)
     app.include_router(memory.router)
+    # SSE / Notifications / Board / Usage(item 12).
+    app.include_router(realtime.router)
 
     return app
 
