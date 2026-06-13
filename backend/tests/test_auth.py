@@ -194,29 +194,34 @@ def test_tenant_scope_isolates_users():
     """
     import uuid
 
-    from sqlalchemy import select
-
     from app.db import SessionLocal
-    from app.models import Task, Unit
+    from app.models import Agent, Project, Task, Team
 
     db = SessionLocal()
     user_a = f"user_a_{uuid.uuid4().hex[:8]}"
     user_b = f"user_b_{uuid.uuid4().hex[:8]}"
-    created_ids = []
+    created_projects = []
     try:
-        # 시드된 unit 하나를 빌려 task를 만든다.
-        unit = db.execute(select(Unit).limit(1)).scalar_one()
+        # 각 사용자에게 project→team→agent→task v3 체인을 하나씩 만든다.
         for uid in (user_a, user_b):
+            proj = Project(user_id=uid, name="scope-test")
+            db.add(proj)
+            db.flush()
+            created_projects.append(proj.id)
+            team = Team(project_id=proj.id, template_key="planning", name="Planning")
+            db.add(team)
+            db.flush()
+            agent = Agent(
+                team_id=team.id, project_id=proj.id, name="PM",
+                role_instructions="x", model_tier="strong", slot=0,
+            )
+            db.add(agent)
+            db.flush()
             t = Task(
-                user_id=uid,
-                unit_id=unit.id,
-                cluster_key="pm",
-                status="queued",
-                instructions="test",
+                user_id=uid, project_id=proj.id, agent_id=agent.id,
+                origin="chat", engine="crew", status="queued", instructions="test",
             )
             db.add(t)
-            db.flush()
-            created_ids.append(t.id)
         db.commit()
 
         scope_a = TenantScope(user_a)
@@ -230,9 +235,9 @@ def test_tenant_scope_isolates_users():
         rows_b = scope_b.query(db, Task).all()
         assert all(r.user_id == user_b for r in rows_b)
     finally:
-        # 테스트 데이터 정리.
-        for tid in created_ids:
-            obj = db.get(Task, tid)
+        # 테스트 데이터 정리 — project 삭제가 team/agent/task까지 cascade.
+        for pid in created_projects:
+            obj = db.get(Project, pid)
             if obj is not None:
                 db.delete(obj)
         db.commit()
