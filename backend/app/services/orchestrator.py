@@ -45,6 +45,8 @@ class ToolCall:
 class LLMResponse:
     tool_calls: list[ToolCall] | None = None
     content: str | None = None
+    tokens_in: int = 0   # dev-runner가 스텝별 토큰을 누적(item 16).
+    tokens_out: int = 0
 
 
 # --- 도구 스키마(OpenAI/LiteLLM function-calling 형식) ---

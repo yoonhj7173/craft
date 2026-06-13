@@ -1,0 +1,109 @@
+"""Dev-runner tests (item 16) — LocalSandboxProvider + scripted agent.
+
+'create a Python script that passes its own test'가 end-to-end로 돌고(verification에 pytest
+exit 0 기록), needs-input 센티넬이 표면화되고, per-command 타임아웃이 깔끔히 종료되며, 토큰이
+누적되는지 검증한다. (E2B + 실 Claude 라이브 검증은 동일 루프 + 키 필요.)
+"""
+
+from __future__ import annotations
+
+import sys
+
+import pytest
+
+from app.services.dev_runner import DEFAULT_TASK_TIMEOUT_SEC, run_dev_task
+from app.services.orchestrator import LLMResponse, ToolCall
+from app.services.sandbox import LocalSandboxProvider
+
+
+@pytest.fixture
+def sandbox():
+    p = LocalSandboxProvider()
+    sid = p.create("proj", "python312")
+    yield p, sid
+    p.destroy(sid)
+
+
+class ScriptedAgent:
+    """미리 정해진 LLMResponse 시퀀스(도구 호출 → 최종 응답)."""
+
+    def __init__(self, steps):
+        self.steps = list(steps)
+        self.i = 0
+
+    def complete(self, messages, tools):
+        resp = self.steps[self.i]
+        self.i = min(self.i + 1, len(self.steps) - 1)
+        return resp
+
+
+def _call(cid, name, args, tin=10, tout=5):
+    return LLMResponse(tool_calls=[ToolCall(id=cid, name=name, args=args)], tokens_in=tin, tokens_out=tout)
+
+
+def test_python_script_passes_its_own_test(sandbox):
+    provider, sid = sandbox
+    py = sys.executable  # 호스트 파이썬으로 실행(Local 프로바이더).
+    agent = ScriptedAgent([
+        _call("1", "write_file", {"path": "calc.py", "content": "def add(a, b):\n    return a + b\n"}),
+        _call("2", "write_file", {"path": "test_calc.py", "content": "from calc import add\n\ndef test_add():\n    assert add(2, 3) == 5\n"}),
+        _call("3", "bash", {"cmd": f"{py} -m pytest -q test_calc.py"}),
+        LLMResponse(content="Implemented add() and its test passes.", tokens_in=20, tokens_out=8),
+    ])
+    outcome = run_dev_task("Create a Python add() with a passing test.", provider, sid, client=agent)
+
+    assert outcome.status == "done"
+    # 파일이 실제로 샌드박스에 생성됨.
+    assert provider.read_file(sid, "calc.py").startswith(b"def add")
+    # verification에 pytest 명령 + exit 0 기록.
+    pytest_cmd = next((v for v in outcome.verification if "pytest" in v["cmd"]), None)
+    assert pytest_cmd is not None and pytest_cmd["exit_code"] == 0
+    # 토큰 누적(3 도구스텝 ×(10,5) + 최종(20,8) = 50,23).
+    assert outcome.tokens_in == 50 and outcome.tokens_out == 23
+
+
+def test_failing_test_recorded(sandbox):
+    provider, sid = sandbox
+    py = sys.executable
+    agent = ScriptedAgent([
+        _call("1", "write_file", {"path": "bad.py", "content": "x = 1/0\n"}),
+        _call("2", "bash", {"cmd": f"{py} bad.py"}),
+        LLMResponse(content="It errors."),
+    ])
+    outcome = run_dev_task("run bad.py", provider, sid, client=agent)
+    # 빌드/실행 실패가 verification에 non-zero로 남는다(working-as-expected 증적).
+    run = next(v for v in outcome.verification if "bad.py" in v["cmd"])
+    assert run["exit_code"] != 0
+
+
+def test_needs_input_sentinel(sandbox):
+    provider, sid = sandbox
+    agent = ScriptedAgent([
+        LLMResponse(content="AWAITING_INPUT: which web framework should I use?"),
+    ])
+    outcome = run_dev_task("build an app", provider, sid, client=agent)
+    assert outcome.status == "needs-input"
+    assert "framework" in outcome.awaiting_prompt
+
+
+def test_per_command_timeout_killed_cleanly(sandbox):
+    provider, sid = sandbox
+    # 무한 sleep을 짧은 타임아웃으로 — per-command 타임아웃 경로(여기선 직접 도구 호출).
+    from app.services.dev_runner import _exec_tool
+    import app.services.dev_runner as dr
+    dr.PER_COMMAND_TIMEOUT_SEC = 1  # 테스트용 단축
+    try:
+        v = []
+        result = _exec_tool(provider, sid, ToolCall(id="x", name="bash", args={"cmd": "sleep 5"}), v)
+        assert result["exit_code"] == -1 and "timed out" in result["error"]
+        assert v[-1]["exit_code"] == -1
+    finally:
+        dr.PER_COMMAND_TIMEOUT_SEC = 300
+
+
+def test_task_timeout_fails_cleanly(sandbox):
+    provider, sid = sandbox
+    # 항상 도구만 호출하는 에이전트 + task_timeout 0 → 즉시 시간초과 실패.
+    agent = ScriptedAgent([_call("1", "bash", {"cmd": "echo loop"})])
+    outcome = run_dev_task("loop forever", provider, sid, client=agent, task_timeout_sec=0)
+    assert outcome.status == "failed" and "time budget" in outcome.error_summary
