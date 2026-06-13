@@ -19,6 +19,7 @@ from app.config import settings
 from app.logging_config import configure_logging, get_logger
 from app.routers import (
     auth_demo,
+    chat,
     context,
     edges,
     memory,
@@ -75,6 +76,8 @@ def create_app() -> FastAPI:
     app.include_router(memory.router)
     # SSE / Notifications / Board / Usage(item 12).
     app.include_router(realtime.router)
+    # Orchestrator chat(item 13).
+    app.include_router(chat.router)
 
     return app
 

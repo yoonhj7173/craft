@@ -38,7 +38,7 @@ The backend was built against the **v1 spec** (`clusters`/`units`). Auditing it 
 
 - [x] 12. **Notifications + SSE + board/usage APIs** — project channel `project:{id}`; notification service v3; `GET /sse` (`task_status`/`notification`/`usage` + heartbeats); `GET /board` (goals×tasks projection); `GET /usage` (totals/by_team/by_agent from per-model pricing). **Verify (live):** SSE client receives correct events for a real transition; board mirrors a dispatched goal; usage sums match rows.
 
-- [ ] 13. **Orchestrator service** — LiteLLM tool-loop (strong tier, prompt caching): `create_goal`, `dispatch_task(+override_route)`, `get_project_status`, `resume_task` (D22), `list_outputs`; behavior contract; history persistence; `POST /chat` + history. **Verify (live + scripted LLM):** freeform → goal+tasks+accurate reply; "status?" matches DB; chat-resume continues a needs-input task; override routes once without mutating edges.
+- [x] 13. **Orchestrator service** — LiteLLM tool-loop (strong tier, prompt caching): `create_goal`, `dispatch_task(+override_route)`, `get_project_status`, `resume_task` (D22), `list_outputs`; behavior contract; history persistence; `POST /chat` + history. **Verify (live + scripted LLM):** freeform → goal+tasks+accurate reply; "status?" matches DB; chat-resume continues a needs-input task; override routes once without mutating edges.
 
 ## Track 2 — Execution engine (parallel after item 5)
 

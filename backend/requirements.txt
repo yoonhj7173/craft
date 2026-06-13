@@ -18,6 +18,12 @@ alembic==1.16.2
 python-multipart==0.0.32
 pdfminer.six==20251230
 
+# --- Item 10: Celery worker ---
+celery==5.4.0
+
+# --- Item 13: orchestrator LLM layer (LiteLLM, D26) ---
+litellm==1.61.20
+
 # --- Test ---
 pytest==9.0.3
 httpx==0.28.1
