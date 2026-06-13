@@ -190,3 +190,51 @@ class AgentPanelOut(BaseModel):
     # 출력 연결(최대 1개, D38) + 들어오는 연결(참고용).
     outgoing: EdgeRefOut | None
     incoming: list[EdgeRefOut]
+
+
+# --- Context / Outputs / Memory (item 9) ---
+
+
+class ContextFileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filename: str
+    mime: str
+    size_bytes: int
+
+
+class OutputFileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    path: str
+    mime: str
+    size_bytes: int
+
+
+class OutputTaskGroupOut(BaseModel):
+    """task별로 묶은 아웃풋(파일 트리). Flow 6."""
+
+    task_id: uuid.UUID
+    agent_id: uuid.UUID
+    agent_name: str
+    file_count: int
+    files: list[OutputFileOut]
+
+
+class OutputPreviewOut(BaseModel):
+    id: uuid.UUID
+    path: str
+    mime: str
+    is_binary: bool
+    content: str | None  # 텍스트/코드면 내용, 바이너리면 null(다운로드로)
+
+
+class MemoryOut(BaseModel):
+    agent_id: uuid.UUID
+    content_md: str
+
+
+class MemoryPut(BaseModel):
+    content_md: str

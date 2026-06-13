@@ -17,7 +17,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.logging_config import configure_logging, get_logger
-from app.routers import auth_demo, edges, projects, system, teams
+from app.routers import (
+    auth_demo,
+    context,
+    edges,
+    memory,
+    outputs,
+    projects,
+    system,
+    teams,
+)
 
 configure_logging(settings.log_level)
 log = get_logger("app.main")
@@ -59,6 +68,10 @@ def create_app() -> FastAPI:
     app.include_router(teams.router)
     # Edge 관리(item 7).
     app.include_router(edges.router)
+    # Context / Outputs / Memory(item 9).
+    app.include_router(context.router)
+    app.include_router(outputs.router)
+    app.include_router(memory.router)
 
     return app
 

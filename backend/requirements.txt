@@ -14,6 +14,10 @@ pydantic-settings==2.10.1
 # --- Item 3: Alembic migrations + seed ---
 alembic==1.16.2
 
+# --- Item 9: file upload + PDF text extraction ---
+python-multipart==0.0.32
+pdfminer.six==20251230
+
 # --- Test ---
 pytest==9.0.3
 httpx==0.28.1
