@@ -106,7 +106,11 @@ export function AgentPanel({ data, onClose, onStop, onRemove, onProvideInput }: 
 
       <div className="mt-5 flex flex-col gap-2">
         {working && <PillButton variant="danger" onClick={onStop}>■ Stop task</PillButton>}
-        <PillButton variant="primary" disabled={working} onClick={onRemove} className={working ? "" : "!bg-none !bg-white/40 !text-secondary !shadow-none"}>{working ? "Stop the task before removing" : "Remove agent"}</PillButton>
+        {working ? (
+          <span className="rounded-pill border-2 border-dashed border-muted-2 py-2 text-center text-sm text-muted">Stop the task before removing</span>
+        ) : (
+          <button onClick={onRemove} className="rounded-pill border-2 border-status-failed/50 py-2 text-sm font-bold text-status-failed transition-colors hover:bg-status-failed/10">Remove agent</button>
+        )}
       </div>
     </PanelShell>
   );

@@ -49,6 +49,30 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
     await apiFetch(`/api/teams/${teamId}`, { method: "PATCH", token, body: JSON.stringify({ room_x: x, room_y: y }) }).catch(() => {});
   }
 
+  // 패널/모달 ↔ 오버레이 상호배타 — 하나 열면 다른 건 닫힌다.
+  function openPanel(s: Selection) { setOverlay(null); setSel(s); }
+  function openOverlay(o: OverlayKind) { setSel({ kind: "none" }); setOverlay(o); }
+  function closeAll() { setSel({ kind: "none" }); setOverlay(null); }
+
+  // Escape로 열린 패널/오버레이 닫기.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeAll(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // E2E QA 훅 — 캔버스 클릭 없이 패널/모달을 열 수 있게(테스트 전용).
+  useEffect(() => {
+    if (!E2E) return;
+    (window as unknown as { __qa: unknown }).__qa = {
+      selectAgent: (id: string) => openPanel({ kind: "agent", id }),
+      selectTeam: (id: string) => openPanel({ kind: "team", id }),
+      addAgent: (teamId: string) => openPanel({ kind: "addAgent", teamId }),
+      addTeam: () => openPanel({ kind: "addTeam" }),
+      openOverlay: (k: OverlayKind) => (k ? openOverlay(k) : closeAll()),
+    };
+  });
+
   async function sendChat(message: string): Promise<string | void> {
     try {
       const token = await getToken();
@@ -68,18 +92,18 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
         data={data}
         callbacks={{
           onRoomMoved: persistRoom,
-          onSelectAgent: (id) => setSel({ kind: "agent", id }),
-          onSelectTeam: (id) => setSel({ kind: "team", id }),
-          onDeselect: () => setSel({ kind: "none" }),
+          onSelectAgent: (id) => openPanel({ kind: "agent", id }),
+          onSelectTeam: (id) => openPanel({ kind: "team", id }),
+          onDeselect: closeAll,
         }}
       />
       <Hud
         projectName={data.project.name}
         onSend={sendChat}
-        onFocusAgent={(id) => setSel({ kind: "agent", id })}
+        onFocusAgent={(id) => openPanel({ kind: "agent", id })}
         onOpen={(w) => {
-          if (w === "addTeam") setSel({ kind: "addTeam" });
-          else setOverlay(w);
+          if (w === "addTeam") openPanel({ kind: "addTeam" });
+          else openOverlay(w);
         }}
       />
       <PanelController projectId={params.projectId} getToken={getToken} mapData={data} sel={sel} setSel={setSel} onChanged={loadMap} />
