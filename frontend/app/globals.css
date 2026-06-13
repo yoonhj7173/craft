@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* two-layer 룰: 월드는 차분, UI는 candy. */
+  --modal-dim: rgba(40, 46, 40, 0.42);
+  --glass-bg: rgba(253, 253, 251, 0.26);
+  --dark-hud: rgba(36, 46, 66, 0.92);
+}
+
+body {
+  color: #2c2925;
+  background: #c6c9bc;
+  font-family: var(--font-nunito), sans-serif;
+}
+
+@layer components {
+  /* Pill 버튼 — radius 999 + white 2.5px border + colored drop shadow. */
+  .btn-pill {
+    @apply inline-flex items-center justify-center gap-2 rounded-pill border-[2.5px] border-white
+           px-5 py-2.5 font-baloo font-extrabold text-white;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #67d2f2, #3fb4dc);
+    box-shadow: 0 8px 18px rgba(63, 180, 220, 0.4);
+  }
+  .btn-confirm {
+    background: linear-gradient(135deg, #74d982, #4dbb5c);
+    box-shadow: 0 8px 18px rgba(77, 187, 92, 0.4);
+  }
+  .btn-danger {
+    background: linear-gradient(135deg, #ef7a66, #e8503a);
+    box-shadow: 0 8px 18px rgba(232, 80, 58, 0.35);
+  }
+  /* Glass 사이드 패널. */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px) saturate(1.15);
+    box-shadow: 8px 0 34px rgba(50, 55, 45, 0.17);
+  }
+  /* Dark HUD tile. */
+  .dark-tile {
+    background: var(--dark-hud);
+    @apply rounded-tile text-white;
+  }
+}
