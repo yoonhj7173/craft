@@ -159,7 +159,7 @@ TEAM_TEMPLATES: list[dict] = [
         "description": "Defines what to build and why — PRDs and functional specs.",
         "engine": "crew",
         "roles": [
-            ("pm", "Product Manager", _PM, "strong", True, None, None, None),
+            ("pm", "Product Manager", _PM, "medium", True, None, None, None),
             ("spec_writer", "Spec Writer", _SPEC_WRITER, "medium", False, None, None, None),
         ],
     },
@@ -179,7 +179,7 @@ TEAM_TEMPLATES: list[dict] = [
         "description": "Designs and builds the experience — UI code rendered to screenshots.",
         "engine": "agent_sdk",
         "roles": [
-            ("product_designer", "Product Designer", _PRODUCT_DESIGNER, "strong", True, None, None, None),
+            ("product_designer", "Product Designer", _PRODUCT_DESIGNER, "medium", True, None, None, None),
             ("visual_designer", "Visual Designer", _VISUAL_DESIGNER, "medium", False, None, None, None),
         ],
     },
@@ -189,8 +189,8 @@ TEAM_TEMPLATES: list[dict] = [
         "description": "Implements, verifies, and reviews working software in a sandbox.",
         "engine": "agent_sdk",
         "roles": [
-            ("swe", "Software Engineer", _SWE, "strong", True, None, None, None),
-            ("architect", "Architect", _ARCHITECT, "strong", False, "handoff", "swe", None),
+            ("swe", "Software Engineer", _SWE, "medium", True, None, None, None),
+            ("architect", "Architect", _ARCHITECT, "medium", False, "handoff", "swe", None),
             ("qa", "QA Engineer", _QA, "medium", False, "review_loop", "swe", 5),
             ("code_reviewer", "Code Reviewer", _CODE_REVIEWER, "medium", False, "review_loop", "swe", 5),
             ("devops", "DevOps", _DEVOPS, "medium", False, None, None, None),

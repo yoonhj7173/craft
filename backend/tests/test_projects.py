@@ -86,7 +86,7 @@ def test_create_clones_one_starter_per_team_no_edges(client, auth, made):
     planning = next(t for t in m["teams"] if t["template_key"] == "planning")
     assert planning["engine"] == "crew"
     assert planning["agents"][0]["name"] == "Product Manager"
-    assert planning["agents"][0]["model_tier"] == "strong"
+    assert planning["agents"][0]["model_tier"] == "medium"  # opus=premium upsell; defaults dropped to sonnet
     dev = next(t for t in m["teams"] if t["template_key"] == "development")
     assert dev["engine"] == "agent_sdk"
     assert dev["agents"][0]["name"] == "Software Engineer"

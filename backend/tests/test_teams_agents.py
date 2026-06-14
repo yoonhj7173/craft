@@ -208,7 +208,7 @@ def test_agent_panel_payload(client, auth, made):
     aid = client.get(f"/api/teams/{tid}", headers=auth(sub)).json()["agents"][0]["id"]
     panel = client.get(f"/api/agents/{aid}", headers=auth(sub)).json()
     assert panel["name"] == "Product Manager"
-    assert panel["model_tier"] == "strong"
+    assert panel["model_tier"] == "medium"  # opus=premium upsell; defaults dropped to sonnet
     assert panel["status"] == "idle"
     assert panel["outgoing"] is None  # starter = Final
     assert panel["incoming"] == []
