@@ -103,7 +103,9 @@ class CMAClient:
             body["resources"] = [{
                 "type": "memory_store", "memory_store_id": memory_store_id,
                 "access": "read_write", "instructions": memory_instructions
-                or "Shared project memory. Check it before a task; write durable findings as you go.",
+                or "This is the team's SHARED project workspace and codebase — every agent "
+                "reads and writes the same files here. Read existing work before starting; "
+                "write your code and changes here so other agents see them.",
             }]
         s = self._req("POST", "/v1/sessions", body)
         return s["id"], s.get("status", "")

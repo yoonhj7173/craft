@@ -86,11 +86,14 @@ def _build_message(task: Task) -> str:
         parts.append(f"# User follow-up #{i}\n{text.strip()}")
     parts.append(f"# Task\n{task.instructions.strip()}")
     parts.append(
-        f"Write every deliverable file (code, docs, artifacts) into {SESSION_OUTPUT_DIR}/ "
-        "so it is captured as output. Use your shared project memory mount for cross-agent "
-        "context, and record durable findings there as you go. If and only if you need "
-        "information only the user can give, end your reply with exactly: "
-        "AWAITING_INPUT: <your one question>.")
+        "# Workspace\n"
+        "Your shared project memory mount is the team's shared codebase/workspace — other "
+        "agents read and write the same files there. Read the existing work in it first, then "
+        "make your changes there so the rest of the team (e.g. reviewers, downstream agents) "
+        "sees them. When you finish, also copy the concrete deliverables you produced into "
+        f"{SESSION_OUTPUT_DIR}/ so they are captured as this task's output.\n"
+        "If and only if you need information only the user can give, end your reply with "
+        "exactly: AWAITING_INPUT: <your one question>.")
     return "\n\n".join(parts)
 
 
