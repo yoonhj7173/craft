@@ -210,8 +210,19 @@ export class PixiWorld {
     this.app.stage.hitArea = this.app.screen;
   }
 
+  private _destroyed = false;
   destroy() {
-    this.app.destroy(true, { children: true });
+    // 견고화: init(async) 미완료/ResizePlugin 미설정/StrictMode 더블마운트 시 destroy가
+    // 던지는 걸 방어(_cancelResize 등). 멱등 + renderer 가드 + try/catch.
+    if (this._destroyed) return;
+    this._destroyed = true;
+    try {
+      if ((this.app as unknown as { renderer?: unknown }).renderer) {
+        this.app.destroy(true, { children: true });
+      }
+    } catch {
+      /* 미초기화/이미 파기 — 무시 */
+    }
   }
 }
 

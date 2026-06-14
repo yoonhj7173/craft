@@ -1,7 +1,8 @@
 "use client";
 
 // 온보딩 위저드(Flow 0) — calm gradient + grid, 680px 카드, 스테퍼.
-// 5스텝: ① Google 사인인 ② 이름 ③ 프로젝트명 ④ 팀 멀티셀렉트(4) ⑤ 컨텍스트(선택).
+// 5스텝: ① Google 사인인(앱 내 모달) ② 이름 ③ 프로젝트명 ④ 팀 멀티셀렉트(4) ⑤ 컨텍스트(선택).
+// 로그인이 첫 스텝 — 사인인 전엔 다음 진행 불가(/app은 미들웨어가 별도 보호).
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SignInButton, useAuth, useUser } from "@clerk/nextjs";
@@ -22,7 +23,7 @@ export default function Onboarding() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 사인인되면 step 0을 자동 통과(E2E 모드는 사인인 스킵).
+  // 사인인되면 step 0(로그인)을 자동 통과(E2E 모드는 사인인 스킵).
   const effectiveStep = !(isSignedIn || E2E) ? 0 : Math.max(step, 1);
 
   function toggleTeam(key: string) {

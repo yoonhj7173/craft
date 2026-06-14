@@ -2,7 +2,7 @@
 
 // 프로젝트 오피스 맵 — 실 /map 엔드포인트 연결. HUD/패널은 item 23-25에서 얹는다.
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, UserButton } from "@clerk/nextjs";
 import dynamic from "next/dynamic";
 import { apiFetch, E2E } from "@/lib/api";
 import { useStore } from "@/lib/store";
@@ -106,6 +106,12 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
           else openOverlay(w);
         }}
       />
+      {!E2E && (
+        // 계정 메뉴(아바타 → 로그아웃). 좌하단 고정.
+        <div className="absolute bottom-5 left-5 z-20 rounded-full bg-white/80 p-0.5 shadow-card">
+          <UserButton afterSignOutUrl="/" />
+        </div>
+      )}
       <PanelController projectId={params.projectId} getToken={getToken} mapData={data} sel={sel} setSel={setSel} onChanged={loadMap} />
       {overlay === "board" && <BoardOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} onFocus={(id) => { setOverlay(null); setSel({ kind: "agent", id }); }} />}
       {overlay === "outputs" && <OutputsOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} />}

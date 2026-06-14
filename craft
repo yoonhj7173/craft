@@ -60,11 +60,14 @@ product)
   sleep 6
   echo
   c_green "════════════════════════════════════════════"
-  c_green "  PRODUCT is up → http://localhost:$PROD_PORT"
-  c_green "    sign in (Google) → onboarding → office map"
-  c_green "  Backend API → http://localhost:$API_PORT/health"
-  c_green "  Logs: /tmp/craft-{backend,worker,frontend}.log"
-  c_green "  Ctrl+C to stop."
+  c_green "  Craft is up on :$PROD_PORT (one app serves everything)"
+  c_green "    Landing  → http://localhost:$PROD_PORT/"
+  c_green "    Product  → http://localhost:$PROD_PORT/onboarding"
+  c_green "               (Get started → Google sign-in → onboarding → office map)"
+  c_green "    Backend  → http://localhost:$API_PORT/health"
+  c_green "  Do ALL QA here on :$PROD_PORT — :$LAND_PORT is only the separate"
+  c_green "  'craft landing' (frontend-only, no backend), not needed for product QA."
+  c_green "  Logs: /tmp/craft-{backend,worker,frontend}.log   ·   Ctrl+C to stop."
   c_green "════════════════════════════════════════════"
   # 프론트 로그를 따라가며 살아있게 유지(Ctrl+C로 전체 종료).
   tail -f /tmp/craft-frontend.log
