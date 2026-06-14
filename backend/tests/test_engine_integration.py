@@ -28,6 +28,10 @@ def _seeded():
     db = SessionLocal()
     try:
         seed(db)
+        # 이 모듈은 mock E2B dev 경로를 검증 → 전역 cma 디폴트와 무관하게 e2b로 핀.
+        from app.services.config_store import set_config
+        set_config(db, "dev_engine", "e2b")
+        db.commit()
     finally:
         db.close()
 

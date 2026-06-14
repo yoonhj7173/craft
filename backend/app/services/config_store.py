@@ -20,7 +20,7 @@ _DEFAULTS = {
     "context_token_budget": "100000",
     "dev_task_timeout_min": "30",
     "sandbox_idle_pause_sec": "300",
-    "dev_engine": "e2b",          # agent_sdk 경로 실행기: e2b(현행) | cma(D45 파일럿)
+    "dev_engine": "cma",          # development 팀 실행기: cma(D45, 기본) | e2b(폴백). design은 항상 e2b(게이트).
     "cma_environment_id": "",     # CMA 공유 cloud 환경 id(lazy 생성 후 여기 저장)
 }
 
