@@ -22,7 +22,9 @@ from app.config import settings
 
 BASE = "https://api.anthropic.com"
 BETA = "managed-agents-2026-04-01"
+FILES_BETA = "managed-agents-2026-04-01,files-api-2025-04-14"  # session-output 조회는 헤더 2개.
 DEV_TOOLSET = [{"type": "agent_toolset_20260401"}]  # bash/read/write/edit/glob/grep/web
+SESSION_OUTPUT_DIR = "/mnt/session/outputs"  # 여기 쓴 파일이 files.list(scope_id)로 캡처됨.
 
 
 class CMAError(RuntimeError):
@@ -116,6 +118,21 @@ class CMAClient:
             self._req("DELETE", f"/v1/sessions/{session_id}")
         except CMAError:
             pass  # 정리 실패는 무시.
+
+    # --- 세션 출력 파일(컨테이너 /mnt/session/outputs → files.list) ---
+    def list_session_outputs(self, session_id: str) -> list[dict]:
+        r = self._http.get("/v1/files", params={"scope_id": session_id},
+                           headers={"anthropic-beta": FILES_BETA})
+        if r.status_code >= 300:
+            raise CMAError(f"CMA list files -> {r.status_code}: {r.text[:300]}")
+        return r.json().get("data", [])
+
+    def download_file(self, file_id: str) -> bytes:
+        r = self._http.get(f"/v1/files/{file_id}/content",
+                           headers={"anthropic-beta": FILES_BETA})
+        if r.status_code >= 300:
+            raise CMAError(f"CMA download -> {r.status_code}: {r.text[:200]}")
+        return r.content
 
     # --- 폴링(이벤트 리스트 → 우리 상태 재료) ---
     def poll_until_idle(self, session_id: str, *, timeout_sec: float = 600.0,

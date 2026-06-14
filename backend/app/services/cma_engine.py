@@ -15,15 +15,18 @@ terminated·timeout→failed. 토큰/비용은 세션 이벤트 usage 합산.
 from __future__ import annotations
 
 import logging
+import mimetypes
+import time
 
 from sqlalchemy.orm import Session
 
 from app.crews.base import detect_needs_input
-from app.models import Agent, Project, Task
+from app.models import Agent, Output, Project, Task
 from app.services import events
 from app.services import task_service as ts
-from app.services.cma import CMAClient, CMAError
+from app.services.cma import SESSION_OUTPUT_DIR, CMAClient, CMAError
 from app.services.config_store import cost_usd, set_config
+from app.services.verification import _is_safe_path, _is_text_path
 
 log = logging.getLogger("app.cma_engine")
 
@@ -83,10 +86,50 @@ def _build_message(task: Task) -> str:
         parts.append(f"# User follow-up #{i}\n{text.strip()}")
     parts.append(f"# Task\n{task.instructions.strip()}")
     parts.append(
-        "Use your shared project memory mount for cross-agent context, and record durable "
-        "findings there as you go. If and only if you need information only the user can give, "
-        "end your reply with exactly: AWAITING_INPUT: <your one question>.")
+        f"Write every deliverable file (code, docs, artifacts) into {SESSION_OUTPUT_DIR}/ "
+        "so it is captured as output. Use your shared project memory mount for cross-agent "
+        "context, and record durable findings there as you go. If and only if you need "
+        "information only the user can give, end your reply with exactly: "
+        "AWAITING_INPUT: <your one question>.")
     return "\n\n".join(parts)
+
+
+def _collect_outputs(db: Session, task: Task, client: CMAClient, session_id: str) -> int:
+    """세션이 /mnt/session/outputs에 쓴 파일을 Output 행으로 수집(E2B collect_outputs 미러).
+
+    idle 직후 인덱싱 ~1–3s 지연 가능 → 비면 한 번 재시도.
+    """
+    files: list = []
+    for _ in range(3):
+        try:
+            files = client.list_session_outputs(session_id)
+        except CMAError:
+            return 0
+        if files:
+            break
+        time.sleep(2)
+    n = 0
+    for f in files:
+        path = (f.get("filename") or "").lstrip("/")
+        if not path or not _is_safe_path(path):  # zip-slip 등 거부.
+            continue
+        try:
+            data = client.download_file(f["id"])
+        except CMAError:
+            continue
+        mime = f.get("mime_type") or mimetypes.guess_type(path)[0] or "application/octet-stream"
+        if _is_text_path(path, data):
+            db.add(Output(project_id=task.project_id, agent_id=task.agent_id, task_id=task.id,
+                          path=path, mime=mime, size_bytes=len(data),
+                          content=data.decode("utf-8", errors="replace"), content_bytes=None))
+        else:
+            db.add(Output(project_id=task.project_id, agent_id=task.agent_id, task_id=task.id,
+                          path=path, mime=mime, size_bytes=len(data),
+                          content=None, content_bytes=data))
+        n += 1
+    if n:
+        db.commit()
+    return n
 
 
 def run_dev_task_cma(db: Session, task: Task, agent: Agent, model: str, cfg, enqueue) -> str:
@@ -94,58 +137,60 @@ def run_dev_task_cma(db: Session, task: Task, agent: Agent, model: str, cfg, enq
     from app.services.worker_core import _enqueue_children, _finalize_done  # 순환 회피(lazy).
 
     client = CMAClient()
-    try:
-        project = db.get(Project, task.project_id)
-        env_id = _ensure_environment(db, cfg, client)
-        store_id = _ensure_memory_store(db, project, client)
-        _ensure_agent(db, agent, model, client)
-        sid = _ensure_session(db, agent, env_id, store_id, client)
-
-        msg = _build_message(task)
+    try:  # outer: client는 출력수집까지 열려있어야 함 → 맨 끝 finally에서 close.
         try:
-            client.send_user_message(sid, msg)
-        except CMAError:
-            # 세션이 terminated 등으로 죽었으면 1회 재생성 후 재시도.
-            agent.cma_session_id = None
-            db.commit()
+            project = db.get(Project, task.project_id)
+            env_id = _ensure_environment(db, cfg, client)
+            store_id = _ensure_memory_store(db, project, client)
+            _ensure_agent(db, agent, model, client)
             sid = _ensure_session(db, agent, env_id, store_id, client)
-            client.send_user_message(sid, msg)
 
-        res = client.poll_until_idle(sid, timeout_sec=cfg.dev_task_timeout_min * 60)
-    except CMAError as exc:
-        log.warning("cma run failed", extra={"task_id": str(task.id)})
-        ts.transition(db, task, "failed", error_summary=f"CMA: {exc}", model_used=model)
-        events.emit_terminal_notification(db, task)
-        db.commit(); events.emit_status(task)
-        return "failed"
+            msg = _build_message(task)
+            try:
+                client.send_user_message(sid, msg)
+            except CMAError:
+                # 세션이 terminated 등으로 죽었으면 1회 재생성 후 재시도.
+                agent.cma_session_id = None
+                db.commit()
+                sid = _ensure_session(db, agent, env_id, store_id, client)
+                client.send_user_message(sid, msg)
+
+            res = client.poll_until_idle(sid, timeout_sec=cfg.dev_task_timeout_min * 60)
+        except CMAError as exc:
+            log.warning("cma run failed", extra={"task_id": str(task.id)})
+            ts.transition(db, task, "failed", error_summary=f"CMA: {exc}", model_used=model)
+            events.emit_terminal_notification(db, task)
+            db.commit(); events.emit_status(task)
+            return "failed"
+
+        cost = cost_usd(cfg, model, res.tokens_in, res.tokens_out)
+
+        # terminated / timeout → failed.
+        if res.status in ("terminated", "timeout"):
+            ts.transition(db, task, "failed", error_summary=f"CMA session {res.status}",
+                          result_markdown=res.reply, model_used=model,
+                          tokens_in=res.tokens_in, tokens_out=res.tokens_out, est_cost_usd=cost)
+            events.emit_terminal_notification(db, task)
+            db.commit(); events.emit_status(task)
+            return "failed"
+
+        # idle: AWAITING_INPUT 센티넬 또는 requires_action → needs-input.
+        question = detect_needs_input(res.reply)
+        if question is not None or res.stop_reason == "requires_action":
+            ts.transition(db, task, "needs-input", awaiting_prompt=question or "Awaiting your input",
+                          result_markdown=res.reply, model_used=model,
+                          tokens_in=res.tokens_in, tokens_out=res.tokens_out, est_cost_usd=cost)
+            events.emit_terminal_notification(db, task)
+            db.commit(); events.emit_status(task)
+            events.emit_usage(task.project_id, task.agent_id, res.tokens_in, res.tokens_out, cost)
+            return "needs-input"
+
+        # done — 컨테이너 출력 파일 수집(client 아직 열림) 후 공통 마무리.
+        ts.transition(db, task, "done", result_markdown=res.reply, model_used=model,
+                      tokens_in=res.tokens_in, tokens_out=res.tokens_out, est_cost_usd=cost)
+        _collect_outputs(db, task, client, sid)
+        new_ids = _finalize_done(db, task, res.tokens_in, res.tokens_out, cost)
+        _enqueue_children(new_ids, enqueue)
+        return "done"
     finally:
         client.close()
-
-    cost = cost_usd(cfg, model, res.tokens_in, res.tokens_out)
-
-    # terminated / timeout → failed.
-    if res.status in ("terminated", "timeout"):
-        ts.transition(db, task, "failed", error_summary=f"CMA session {res.status}",
-                      result_markdown=res.reply, model_used=model,
-                      tokens_in=res.tokens_in, tokens_out=res.tokens_out, est_cost_usd=cost)
-        events.emit_terminal_notification(db, task)
-        db.commit(); events.emit_status(task)
-        return "failed"
-
-    # idle: AWAITING_INPUT 센티넬 또는 requires_action → needs-input.
-    question = detect_needs_input(res.reply)
-    if question is not None or res.stop_reason == "requires_action":
-        ts.transition(db, task, "needs-input", awaiting_prompt=question or "Awaiting your input",
-                      result_markdown=res.reply, model_used=model,
-                      tokens_in=res.tokens_in, tokens_out=res.tokens_out, est_cost_usd=cost)
-        events.emit_terminal_notification(db, task)
-        db.commit(); events.emit_status(task)
-        events.emit_usage(task.project_id, task.agent_id, res.tokens_in, res.tokens_out, cost)
-        return "needs-input"
-
-    # done.
-    ts.transition(db, task, "done", result_markdown=res.reply, model_used=model,
-                  tokens_in=res.tokens_in, tokens_out=res.tokens_out, est_cost_usd=cost)
-    new_ids = _finalize_done(db, task, res.tokens_in, res.tokens_out, cost)
-    _enqueue_children(new_ids, enqueue)
-    return "done"

@@ -128,7 +128,11 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, dev_client=None, 
 
     # 엔진 라우팅.
     if task.engine == "agent_sdk":
-        if cfg.dev_engine == "cma":  # D45 파일럿 — 플래그로 CMA, 기본은 E2B 폴백.
+        # CMA 파일럿(D45): development 팀만 cma. design은 playwright 스크린샷(D42) 필요 → E2B 유지.
+        from app.models import Team
+        team = db.get(Team, agent.team_id)
+        is_dev = bool(team and team.template_key == "development")
+        if cfg.dev_engine == "cma" and is_dev:
             from app.services.cma_engine import run_dev_task_cma
             return run_dev_task_cma(db, task, agent, model, cfg, enqueue)
         return _run_dev_task(db, task, agent, model, cfg, dev_client, enqueue)
