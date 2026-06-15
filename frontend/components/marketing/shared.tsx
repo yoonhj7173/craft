@@ -1,12 +1,12 @@
 // 마케팅 공유 컴포넌트 — 로고/Nav/Footer (핸드오프 marketing 토큰).
+import Image from "next/image";
 import Link from "next/link";
 
 export function Logo({ sub }: { sub?: string }) {
   return (
     <Link href="/" className="flex items-center gap-2.5">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-white font-baloo text-lg font-extrabold text-white"
-        style={{ background: "linear-gradient(135deg,#67D2F2,#3FB4DC)", boxShadow: "0 4px 10px rgba(63,180,220,0.35)" }}>C</span>
-      <span className="font-baloo text-xl font-extrabold text-navy">Craft</span>
+      <Image src="/logo.png" alt="pondas" width={36} height={36} className="h-9 w-9 rounded-xl" priority />
+      <span className="font-baloo text-xl font-extrabold text-navy">pondas</span>
       {sub && <span className="font-baloo text-xl font-bold text-muted">/ {sub}</span>}
     </Link>
   );
@@ -34,7 +34,7 @@ export function Footer() {
           <Link href="/blog" className="hover:text-ink">Blog</Link>
           <Link href="/#" className="hover:text-ink">Privacy</Link>
           <Link href="/#" className="hover:text-ink">Terms</Link>
-          <span className="text-muted">© {new Date().getFullYear()} Craft</span>
+          <span className="text-muted">© {new Date().getFullYear()} pondas</span>
         </div>
       </div>
     </footer>

@@ -4,10 +4,10 @@ import { Nav, Footer } from "@/components/marketing/shared";
 import { allPosts, CATEGORY_CHIP } from "@/lib/blog";
 
 export const metadata: Metadata = {
-  title: "The Craft newsroom",
+  title: "The pondas newsroom",
   description: "Notes from building a virtual company — product, agents, and the office sim. No fluff.",
   alternates: { canonical: "/blog" },
-  openGraph: { title: "The Craft newsroom", type: "website", url: "/blog" },
+  openGraph: { title: "The pondas newsroom", type: "website", url: "/blog" },
 };
 
 function Chip({ category }: { category: string }) {
@@ -32,7 +32,7 @@ export default function BlogIndex() {
     <div className="min-h-screen bg-[#FBFAF6] font-nunito text-ink">
       <Nav blogSub />
       <main className="mx-auto max-w-5xl px-6 py-14 md:px-10">
-        <h1 className="font-baloo text-4xl font-extrabold md:text-5xl">The Craft newsroom</h1>
+        <h1 className="font-baloo text-4xl font-extrabold md:text-5xl">The pondas newsroom</h1>
         <p className="mt-3 text-lg text-secondary">Notes from building a virtual company — product, agents, and the office sim. No fluff.</p>
 
         {featured && (

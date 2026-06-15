@@ -14,7 +14,7 @@ export function generateMetadata({ params }: { params: { slug: string } }): Meta
   if (!allSlugs().includes(params.slug)) return {};
   const p = getPost(params.slug);
   return {
-    title: `${p.title} — Craft`,
+    title: `${p.title} — pondas`,
     description: p.summary,
     alternates: { canonical: `/blog/${p.slug}` },
     openGraph: { title: p.title, description: p.summary, type: "article", url: `/blog/${p.slug}` },

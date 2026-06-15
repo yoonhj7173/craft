@@ -9,7 +9,7 @@ const STATUSES: AgentStatus[] = ["idle", "queued", "working", "needs-input", "do
 export default function DesignPage() {
   return (
     <main className="min-h-screen p-10 font-nunito text-ink" style={{ background: "#C6C9BC" }}>
-      <h1 className="mb-8 font-baloo text-3xl font-extrabold">Craft — Design System</h1>
+      <h1 className="mb-8 font-baloo text-3xl font-extrabold">pondas — Design System</h1>
 
       <Section title="Pill buttons">
         <PillButton variant="primary">Get started →</PillButton>

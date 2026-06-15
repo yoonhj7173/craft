@@ -3,11 +3,11 @@ import Link from "next/link";
 import { Nav, Footer } from "@/components/marketing/shared";
 
 export const metadata: Metadata = {
-  title: "Craft — Run your AI company like a tiny office sim",
+  title: "pondas — Run your AI company like a tiny office sim",
   description:
-    "Craft is an office-sim for solo founders: AI agents are workers in rooms, you steer them from one chat. Pick teams, wire the graph, dispatch work, and watch it get done — including real code, built and tested in a sandbox.",
+    "pondas is an office-sim for solo founders: AI agents are workers in rooms, you steer them from one chat. Pick teams, wire the graph, dispatch work, and watch it get done — including real code, built and tested in a sandbox.",
   openGraph: {
-    title: "Craft — Run your AI company like a tiny office sim",
+    title: "pondas — Run your AI company like a tiny office sim",
     description: "A whole team. None of the hiring. AI agents you can see and steer.",
     type: "website",
     url: "/",
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 const softwareJsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "Craft",
+  name: "pondas",
   applicationCategory: "BusinessApplication",
   operatingSystem: "Web",
   description:
@@ -58,7 +58,7 @@ export default function Landing() {
       {/* Answer cards (GEO-friendly Q&A) */}
       <section className="mx-auto max-w-6xl px-6 py-16 md:px-10">
         <div className="grid gap-5 md:grid-cols-3">
-          <Answer icon="🏢" q="What is Craft?" a="A web app where you run a virtual company of AI agents, shown as a friendly office sim. Teams are rooms, agents are workers at desks, and you steer everything from one chat." />
+          <Answer icon="🏢" q="What is pondas?" a="A web app where you run a virtual company of AI agents, shown as a friendly office sim. Teams are rooms, agents are workers at desks, and you steer everything from one chat." />
           <Answer icon="🧑‍💻" q="Who is it for?" a="Solo founders building a product alone — who want planning, research, design, and development delegated to AI agents they can see, direct, and trust." />
           <Answer icon="⚡" q="Why is it different?" a="The dev team writes and runs real code in a sandbox — 'works as expected', not 'build passed'. You get working files, not just chat." />
         </div>

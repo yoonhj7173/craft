@@ -59,7 +59,7 @@ export default function Onboarding() {
           "linear-gradient(160deg,#DDE4D6,#C6C9BC), repeating-linear-gradient(0deg,transparent,transparent 41px,rgba(90,95,80,0.05) 42px)",
       }}
     >
-      <div className="absolute left-8 top-7 font-baloo text-2xl font-extrabold text-ink">Craft</div>
+      <div className="absolute left-8 top-7 font-baloo text-2xl font-extrabold text-ink">pondas</div>
 
       <div className="w-full max-w-[680px] rounded-card border-[3px] border-white bg-floor p-9 shadow-card">
         <div className="mb-7 flex justify-center">
@@ -67,7 +67,7 @@ export default function Onboarding() {
         </div>
 
         {effectiveStep === 0 && (
-          <Step title="Welcome to Craft" sub="Run a virtual company of AI agents.">
+          <Step title="Welcome to pondas" sub="Run a virtual company of AI agents.">
             <SignInButton mode="modal">
               <PillButton variant="primary">Sign in with Google</PillButton>
             </SignInButton>

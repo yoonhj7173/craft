@@ -11,8 +11,19 @@ const bricolage = Bricolage_Grotesque({ subsets: ["latin"], weight: ["700"], var
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "Craft",
+  title: { default: "pondas.ai", template: "%s · pondas.ai" },
   description: "Run a virtual company of AI agents.",
+  openGraph: {
+    title: "pondas.ai",
+    description: "Run a virtual company of AI agents.",
+    siteName: "pondas.ai",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "pondas.ai",
+    description: "Run a virtual company of AI agents.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
