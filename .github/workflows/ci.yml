@@ -46,6 +46,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
       - run: alembic upgrade head
+      - run: python seed.py   # team_templates(카탈로그)+config 시드 — 테스트 FK 의존.
       - run: pytest -p no:warnings -q
 
   frontend:
