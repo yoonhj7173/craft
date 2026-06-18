@@ -12,6 +12,16 @@ import { CARPET } from "@/lib/tokens";
 
 const STEPS = ["Sign in", "Your name", "Project", "Teams", "Context"];
 
+/**
+ * Onboarding — 처음 들어온 사용자를 위한 5단계 마법사. 끝나면 첫 프로젝트가 만들어진다.
+ *
+ * 무슨 일을 하나: ① Google 로그인 → ② 이름 → ③ 프로젝트명 → ④ 팀 고르기(복수) → ⑤ 컨텍스트(선택)
+ *   순서로 받고, 마지막에 finish()가 POST /api/projects로 프로젝트+선택 팀들을 한 번에 생성한 뒤
+ *   메인 맵 화면(/app/{id})으로 보낸다. 로그인 전엔 다음 단계로 못 넘어간다(첫 관문).
+ * 누가 부르나: 랜딩의 '시작하기' 버튼 → /onboarding.
+ * 연결: 생성 호출 → apiFetch (frontend/lib/api.ts) → create_project (backend/app/routers/projects.py).
+ *   완료 후 이동 → frontend/app/app/[projectId]/page.tsx.
+ */
 export default function Onboarding() {
   const router = useRouter();
   const { isSignedIn, user } = useUser();

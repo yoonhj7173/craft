@@ -191,10 +191,16 @@ def require_user(
     token: Optional[str] = Query(default=None),
     verifier: ClerkTokenVerifier = Depends(get_verifier),
 ) -> str:
-    """FastAPI 의존성: 검증된 Clerk user_id를 반환한다. 실패 시 401.
+    """로그인 검문(인증 필터) — 요청자가 진짜 로그인한 사람인지 확인하고 '누구인지'를 돌려준다.
 
-    라우트에서 `user_id: str = Depends(require_user)` 로 주입받으면, 그 핸들러는
-    인증된 사용자에 한해서만 실행되고 user_id를 신뢰할 수 있다.
+    PM 한 줄: 이게 Spring Security의 인증 필터에 해당한다. API 함수가 매개변수에
+        `user_id: str = Depends(require_user)`라고 써두면, FastAPI가 그 함수 실행 전에
+        여기를 먼저 돌려서 토큰을 검증한다. 통과해야만 실제 함수가 실행되고, 그때 받은 user_id는
+        믿을 수 있다(위조 불가). 즉 "로그인 안 했으면 아예 못 들어옴" 장치.
+    무슨 일을 하나: 요청 헤더의 토큰(JWT)을 꺼내 verifier로 서명·만료를 검증하고 user_id를 반환.
+        실패하면 401(인증 실패)을 던진다. user_id는 절대 요청 본문에서 받지 않고 토큰에서만 뽑는다.
+    누가 부르나: user_id/scope가 필요한 거의 모든 API 함수가 Depends로 주입받는다.
+    연결: 토큰 검증 알맹이 → 이 파일 ClerkTokenVerifier.verify. 그 user_id로 데이터 좁히기 → TenantScope.
     """
     # E2E 우회(개발/테스트 전용, 기본 off) — 풀스택 브라우저 E2E에서 실 Clerk 세션 없이
     # 앱 와이어링을 검증하기 위함. settings.e2e_auth_bypass가 켜질 때만 활성(프로덕션 금지).
@@ -216,11 +222,13 @@ def require_user(
 
 
 class TenantScope:
-    """테넌시 스코프 헬퍼 — 검증된 user_id로 쿼리를 강제로 좁힌다.
+    """내 데이터만 보기(격리 헬퍼) — 모든 조회를 '로그인한 그 사람 것'으로 자동으로 좁혀준다.
 
-    tech-design §10 AuthZ: 모든 사용자 소유 쿼리는 user_id로 필터되어야 한다. 라우트가
-    직접 .filter(Task.user_id == ...)를 잊지 않도록, 이 헬퍼를 통해서만 사용자 데이터를
-    조회하는 규약을 둔다. 교차 사용자 접근은 구조적으로 빈 결과가 된다.
+    PM 한 줄: 멀티테넌시(한 서비스를 여러 사용자가 쓰되 서로의 데이터는 절대 안 보이게)의 핵심.
+        남의 데이터가 새는 사고를 막으려고, "사용자 데이터를 조회할 땐 반드시 이걸 거친다"는 규약을 둔다.
+        scope.query(db, Task)로 조회하면 자동으로 user_id 필터가 붙어, 남의 것은 구조적으로 빈 결과가 된다.
+    무슨 일을 하나: query()=내 것만 거르는 쿼리 생성, owns()=이 행이 내 것인지 확인.
+    누가 부르나: tenant_scope 의존성을 통해 API 함수들이 주입받는다. 단건 소유권 확인은 ownership.py와 짝.
     """
 
     def __init__(self, user_id: str) -> None:

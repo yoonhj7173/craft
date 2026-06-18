@@ -136,7 +136,18 @@ def _collect_outputs(db: Session, task: Task, client: CMAClient, session_id: str
 
 
 def run_dev_task_cma(db: Session, task: Task, agent: Agent, model: str, cfg, enqueue) -> str:
-    """agent_sdk 경로의 CMA 구현. 반환: done | needs-input | failed."""
+    """CMA 방식 개발 실행 — 코딩 작업을 우리가 직접 안 돌리고 'Claude 관리형 에이전트'에 맡긴다.
+
+    PM 한 줄: 같은 개발 작업을 두 가지 방식으로 돌릴 수 있다 — 우리가 샌드박스를 직접 모는 E2B 방식
+        (dev_runner.py)과, Anthropic의 CMA(Claude Managed Agents — 에이전트·실행환경·'기억'을 클라우드가
+        통째로 관리)에 위임하는 이 방식. 설정 dev_engine=="cma"이고 개발팀이면 이쪽으로 온다(D45 파일럿).
+        장점: 에이전트별 개인 기억 + 프로젝트 공유 기억('회사 두뇌')을 클라우드가 관리해준다.
+    무슨 일을 하나: 필요한 CMA 리소스(공유 환경·프로젝트 기억저장소·에이전트·세션)를 그때그때 만들고,
+        작업 메시지를 보내 끝날 때까지 기다린 뒤, 결과를 done/needs-input/failed로 분류하고 출력 파일을 수집한다.
+    누가 부르나: process_task의 agent_sdk 분기 — backend/app/services/worker_core.py.
+    연결: CMA 서버와 실제 통신 → CMAClient (backend/app/services/cma.py).
+        완료 후 공통 마무리·전파 → _finalize_done (worker_core.py). (E2B 대응판 → _run_dev_task)
+    """
     from app.services.worker_core import _enqueue_children, _finalize_done  # 순환 회피(lazy).
 
     client = CMAClient()

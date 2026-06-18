@@ -35,7 +35,12 @@ QA_ADDENDUM = (
 
 def start_dev_server(provider: SandboxProvider, sandbox_id: str, cmd: str, port: int,
                      *, health_path: str = "/", timeout: int = 30) -> bool:
-    """dev 서버를 백그라운드로 띄우고 포트가 응답할 때까지 폴링한다. 성공 True."""
+    """개발 서버 띄우기 — 만든 앱을 샌드박스에서 실제로 실행하고, 포트가 응답할 때까지 기다린다.
+
+    무슨 일을 하나: 'npm run dev' 같은 명령을 백그라운드로 띄우고, 해당 포트가 응답(< 500)할 때까지
+        폴링한다. "빌드 통과가 아니라 진짜 떠야 성공"이라는 검증 철학의 출발점.
+    누가 부르나: 동작 검증이 필요한 개발/디자인 흐름(QA·디자이너 역할). 연결: 렌더 확인 → assert_rendered, screenshot.
+    """
     # 백그라운드 기동(셸이 즉시 반환). 로그는 파일로.
     provider.exec(sandbox_id, f"nohup {cmd} > .devserver.log 2>&1 &", timeout=10)
     deadline = time.time() + timeout
@@ -113,7 +118,15 @@ def _is_safe_path(path: str) -> bool:
 
 def collect_outputs(db: Session, task: Task, provider: SandboxProvider, sandbox_id: str,
                     *, since_mtime: float = 0.0) -> int:
-    """변경 파일(mtime >= since_mtime)을 ignore 규칙 적용해 outputs 행으로 수집. 행 수 반환."""
+    """결과 파일 거두기 — 개발/디자인 작업이 샌드박스에서 새로 만든·바꾼 파일만 골라 DB에 저장한다.
+
+    무슨 일을 하나: 작업 시작 시각 이후에 바뀐 파일(mtime 비교)만 추려, node_modules 같은 잡파일은
+        제외하고, outputs 테이블에 저장한다(코드·문서는 텍스트로, PNG 등은 바이너리로). 이게 결과물
+        화면에 뜨고 zip 다운로드된다.
+    누가 부르나: 개발/디자인 작업 완료 시 — _run_dev_task (backend/app/services/worker_core.py).
+    보안 포인트: '../' 같은 경로 탈출(zip-slip — 압축 풀 때 엉뚱한 위치에 파일 쓰는 공격)은 걸러낸다.
+    연결: 저장된 파일을 보여주는 곳 → outputs.py.
+    """
     entries = provider.file_tree(sandbox_id, ".")
     n = 0
     for e in entries:

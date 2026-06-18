@@ -15,6 +15,15 @@ export type Selection =
   | { kind: "addAgent"; teamId: string }
   | { kind: "addTeam" };
 
+/**
+ * PanelController — 맵에서 무엇을 선택했는지(sel)에 따라 알맞은 패널·모달을 띄우고 동작을 처리한다.
+ *
+ * 무슨 일을 하나: 선택 상태(sel: 팀/에이전트/팀추가/에이전트추가)에 맞춰 ① 필요한 데이터를 백엔드에서
+ *   불러오고 ② 해당 패널(InspectorPanel) 또는 모달(Modals)을 렌더하고 ③ 거기서 일어난 동작(추가·삭제·
+ *   Stop·입력제공)을 call()로 백엔드에 보낸 뒤 onChanged로 맵을 새로고침한다. 에러는 상단 배너로 띄운다.
+ * 누가 부르나: 메인 맵 화면 — frontend/app/app/[projectId]/page.tsx.
+ * 연결: 데이터/동작 호출 → frontend/lib/api.ts(→ teams.py/tasks.py/edges.py). 화면 조각 → InspectorPanel.tsx, Modals.tsx.
+ */
 export function PanelController({ projectId, getToken, mapData, sel, setSel, onChanged }: {
   projectId: string; getToken: () => Promise<string | null>; mapData: MapData;
   sel: Selection; setSel: (s: Selection) => void; onChanged: () => void;

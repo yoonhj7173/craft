@@ -40,7 +40,14 @@ class GuardConfig:
 
 
 def load_config(db: Session) -> GuardConfig:
-    """config 테이블을 typed GuardConfig로 읽는다(누락은 기본값)."""
+    """설정 읽기 — 비용 한도·동시실행 한도·모델 단가 같은 운영 값을 DB에서 한 묶음으로 읽는다.
+
+    PM 한 줄: 이 값들이 config 테이블에 있어서, 코드 재배포 없이 DB만 고치면 한도/모델을 바꿀 수 있다.
+        (예: 하루 비용 상한, 동시에 돌릴 작업 수, 등급별 어떤 모델 쓸지, 모델별 토큰 단가)
+    무슨 일을 하나: config 테이블 전체를 읽어 타입이 정해진 GuardConfig 객체로 만든다. 빠진 값은 안전한 기본값.
+    누가 부르나: 디스패치 게이트(task_service.py), 비용 계산, 워커 등 운영 한도가 필요한 거의 모든 곳.
+    연결: 등급→모델 → 아래 model_for_tier. 비용 계산 → 아래 cost_usd. 기본 시드값 → catalog.py의 config_seed.
+    """
     rows = {c.key: c.value for c in db.query(Config).all()}
 
     def g(key: str) -> str:
@@ -76,7 +83,12 @@ def set_config(db: Session, key: str, value: str) -> None:
 
 
 def cost_usd(cfg: GuardConfig, model: str, tokens_in: int, tokens_out: int) -> float:
-    """모델별 가격맵으로 USD 비용 계산(per MTok). 미지정 모델은 0."""
+    """비용 계산 — 쓴 토큰 수와 모델 단가로 이 작업이 든 돈(달러)을 계산한다.
+
+    무슨 일을 하나: 입력/출력 토큰 수 × 모델별 100만 토큰당 단가 = 추정 비용. 작업이 끝날 때
+        호출해 task에 저장하고, 그 합이 하루 비용 한도(daily_cost_cap) 체크와 사용량 화면에 쓰인다.
+    누가 부르나: 작업 마무리 — worker_core.py, cma_engine.py.
+    """
     p = cfg.model_pricing.get(model)
     if not p:
         return 0.0

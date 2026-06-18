@@ -59,7 +59,11 @@ def _spawn(
     input_payload: str,
     loop_state: dict | None = None,
 ) -> uuid.UUID | None:
-    """다운스트림 task를 queued로 생성. dedup으로 재배달 중복은 skip(None)."""
+    """다음 작업 만들기(전파 일꾼) — 연결선을 따라 받을 쪽 에이전트에게 새 작업을 만들어준다.
+
+    무슨 일을 하나: 같은 (부모작업, 엣지) 조합으로 이미 만든 적 있으면 건너뛰고(중복 방지 = dedup),
+        아니면 받을 에이전트에게 작업을 queued로 생성한다. 누가 부르나: propagate / _on_reviewer_done.
+    """
     if edge_id is not None and _already_fired(db, parent.id, edge_id):
         return None
     to_agent = db.get(Agent, to_agent_id)
@@ -90,7 +94,15 @@ def _notify(db: Session, task: Task, type_: str, message: str) -> None:
 
 
 def _on_reviewer_done(db: Session, reviewer_task: Task, ls: dict) -> list[uuid.UUID]:
-    """리뷰어 task가 done 됐을 때의 review-loop 프로토콜(D19)."""
+    """검토 반복 처리 — 리뷰어가 검토를 끝냈을 때 '통과/수정요청'에 따라 다음을 정한다.
+
+    무슨 일을 하나: review_loop(검토 반복) 연결에서, 리뷰어 작업이 끝나면 그 결과를 본다.
+        - 'APPROVED'(통과) 단어가 있으면 → 루프 종료. 리뷰어에게 또 다른 handoff가 있으면 그쪽으로 진행.
+        - 통과 아님 & 아직 라운드 남음 → 원작성자(A)에게 '리뷰 피드백 반영해 수정' 작업을 돌려준다.
+        - 통과 아님 & 최대 라운드 소진 → "N번 안에 통과 못 함" 알림하고 멈춘다.
+    누가 부르나: propagate가 끝난 작업이 리뷰 작업이었을 때.
+    연결: 작업 생성 → 이 파일 _spawn. 최대 횟수(max_iterations)는 엣지에 저장됨.
+    """
     edge = db.get(Edge, uuid.UUID(ls["edge_id"]))
     if edge is None:
         return []
@@ -130,7 +142,24 @@ def _on_reviewer_done(db: Session, reviewer_task: Task, ls: dict) -> list[uuid.U
 
 
 def propagate(db: Session, task: Task) -> list[uuid.UUID]:
-    """done이 된 task의 다운스트림을 생성하고 새 task id들을 반환(커밋은 호출부)."""
+    """자동 전파(이어달리기) — 작업이 끝나면 연결선(엣지)을 따라 다음 에이전트에게 일을 넘긴다.
+
+    이것이 "사용자가 일일이 시키지 않아도 회사가 알아서 굴러가는" 핵심이다. 사용자가 맵에서
+    A→B로 선을 그어두면, A가 끝나는 순간 B의 작업이 자동으로 생긴다.
+
+    무슨 일을 하나: 방금 done이 된 작업을 보고, 그 에이전트의 출력 연결선을 따라 다음 작업을 만든다.
+    누가 부르나: 작업 완료 마무리 — _finalize_done (backend/app/services/worker_core.py).
+    처리 순서(전파 규칙):
+        1. 억제: 사용자가 멈춘 작업(stopped)이거나 프로젝트가 일시정지면 아무것도 안 함.
+        2. 예산 초과: 한 목표의 작업이 너무 많이 불었으면 중단 + 알림(무한 증식 방지).
+        3. 일회성 우회(override): 지휘자가 "이번만 다른 사람에게" 지정했으면 그쪽으로 1건.
+        4. 연결선(엣지) 종류로 분기:
+           - 연결선 없음 → 여기가 마지막. 최종 결과물(Final output)로 끝.
+           - handoff(넘기기) → 다음 에이전트에게 'A의 결과'를 입력으로 주는 작업 생성.
+           - review_loop(검토 반복) → 리뷰어에게 검토 작업을 생성(리뷰 결과는 _on_reviewer_done이 처리).
+    연결: 검토 반복 프로토콜 → 이 파일 _on_reviewer_done. 실제 작업 생성 → 이 파일 _spawn.
+        반환한 자식 id들을 worker_core가 큐에 올려 다시 process_task로 돌린다.
+    """
     if task.stopped:
         return []
     project = db.get(Project, task.project_id)

@@ -19,7 +19,14 @@ ACTIVE_STATUSES = {"queued", "working", "blocked", "needs-input", "failed"}
 
 
 def agent_status_map(db: Session, project_id: uuid.UUID) -> dict[uuid.UUID, str]:
-    """프로젝트 에이전트별 현재 상태 dict(없으면 키 부재 → 호출부에서 idle 기본)."""
+    """에이전트 현재 상태 계산 — 화면에 보여줄 '각 직원이 지금 뭐 하는지'를 작업 기록에서 뽑아낸다.
+
+    무슨 일을 하나: 에이전트의 표시 상태 = 그 에이전트의 '가장 최근 작업' 상태. 끝난 작업(done)은
+        idle(쉬는 중)로 접고, 실패(failed)는 사용자가 보도록 유지한다. 작업이 한 번도 없으면 결과에서
+        빠지고(호출부가 idle로 기본 처리) → 맵의 캐릭터 표정/뱃지가 여기서 정해진다.
+    누가 부르나: 맵 조회(projects.py), 팀/에이전트 패널(teams.py), 지휘자 현황조회(orchestrator.py).
+    연결: 이 값이 화면 색/애니메이션으로 변환됨 → frontend/lib/tokens.ts, store.ts.
+    """
     subq = (
         db.query(Task.agent_id, func.max(Task.created_at).label("mx"))
         .filter(Task.project_id == project_id)

@@ -187,7 +187,18 @@ def add_agent(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> AgentPanelOut:
-    """에이전트 추가 — 5캡(409), 슬롯 배정, 선택 출력 엣지 동시 생성(D37/D38)."""
+    """에이전트 추가 — 방(팀)에 직원 1명을 새로 앉히고, 원하면 출력 연결선도 같이 만든다.
+
+    무슨 일을 하나: 팀에 에이전트를 추가한다. 팀당 최대 5명(자리 0~4) 규칙을 지키고, 빈 자리를
+        자동 배정한다. 모달에서 '이 사람 결과를 누구에게 넘길지'(output)를 지정했으면 연결선도 같이 만든다.
+    누가 부르나: 팀 패널의 'Add agent' 모달 제출 — frontend/components/panels/PanelController.tsx.
+    처리 순서:
+        1. 모델 등급(strong/medium/light) 유효성 검사.
+        2. _next_free_slot으로 빈 자리 찾기 — 만석이면 409("desks are full").
+        3. 같은 팀 내 이름 중복이면 409.
+        4. 에이전트 생성. output이 있으면 validate_and_build_edge로 연결선 검증·생성.
+    연결: 연결선 규칙 → validate_and_build_edge (backend/app/edge_ops.py).
+    """
     team = load_owned_team(db, scope, team_id)
     if body.model_tier not in _TIERS:
         raise HTTPException(status_code=422, detail="model_tier must be strong|medium|light")
@@ -255,8 +266,14 @@ def delete_agent(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> None:
+    """에이전트 삭제 — 단, 일하는 중이면 막는다.
+
+    무슨 일을 하나: 에이전트를 지운다. 다만 진행 중(queued/working/blocked/needs-input) 작업이 있으면
+        409로 막아 "먼저 멈춰라"고 한다(일하는 도중 사라지면 결과가 붕 뜨므로). 삭제 시 연결선은 자동 정리(cascade).
+    누가 부르나: 에이전트 패널의 'Remove' — frontend/components/panels/PanelController.tsx.
+    연결: 활성 작업 확인 → has_active_task (backend/app/status_util.py).
+    """
     agent = load_owned_agent(db, scope, agent_id)
-    # working/queued면 먼저 멈추라고 막는다(D16/Flow 4). item 8 전엔 task 없어 안 걸림.
     if has_active_task(db, agent.id):
         raise HTTPException(status_code=409, detail="stop the task before removing this agent")
     db.delete(agent)  # outgoing/incoming 엣지 cascade(FK)
@@ -273,6 +290,13 @@ def get_agent(
 
 
 def _agent_panel(db: Session, agent: Agent) -> AgentPanelOut:
+    """에이전트 패널 데이터 — 직원 한 명을 클릭했을 때 옆에 뜨는 상세 정보를 모아 만든다.
+
+    무슨 일을 하나: 이름/역할/모델등급/현재 상태 + 들어오고 나가는 연결선 + 지금 진행 중인 작업
+        (Stop·입력제공 버튼이 가리킬 대상) + 마지막 작업의 에러/토큰을 한데 모은다.
+    누가 부르나: GET /api/agents/{id} → get_agent. 프론트가 에이전트 패널을 열 때.
+    연결: 받는 쪽 → frontend/components/panels/InspectorPanel.tsx의 AgentPanel.
+    """
     from app.models import Task
 
     status_by_agent = agent_status_map(db, agent.project_id)

@@ -6,6 +6,15 @@ import type { MapData } from "@/lib/map/types";
 import { PixiWorld, type WorldCallbacks } from "@/lib/map/world";
 import { useStore } from "@/lib/store";
 
+/**
+ * MapCanvas — 사무실 맵을 실제로 그리는 화면. Pixi.js(게임용 2D 그래픽 엔진)로 방·캐릭터를 렌더한다.
+ *
+ * 무슨 일을 하나: 받은 맵 데이터(data)를 Pixi 월드에 그린다. 그리고 store를 '구독'해서, 에이전트
+ *   상태가 바뀌면 React 화면을 다시 그리지 않고 Pixi에 직접 "이 캐릭터 표정 바꿔"라고 명령한다
+ *   (성능 위해 React 리렌더 우회). 클릭·드래그 같은 상호작용은 callbacks로 부모(ProjectMap)에 알린다.
+ * 누가 부르나: 메인 맵 화면 — frontend/app/app/[projectId]/page.tsx (무거워서 동적 import).
+ * 연결: 실제 그리기 로직 → frontend/lib/map/world.ts. 상태 구독 → frontend/lib/store.ts.
+ */
 export default function MapCanvas({ data, callbacks }: { data: MapData; callbacks?: WorldCallbacks }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);

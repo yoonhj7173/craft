@@ -105,7 +105,22 @@ def run_dev_task(
     role_instructions: str = "",
     task_timeout_sec: int = DEFAULT_TASK_TIMEOUT_SEC,
 ) -> DevOutcome:
-    """dev/design task를 샌드박스에서 실행한다(워크스페이스 핸들은 호출부=item 18이 보장)."""
+    """코딩 에이전트 루프 — 샌드박스 안에서 AI가 직접 코드를 쓰고·돌려보고·고치길 반복한다.
+
+    개발·디자인 작업의 심장. 글쓰기팀(orchestrator의 툴루프와 비슷)과 달리, 여기 도구는 실제
+    컴퓨터를 만진다: bash(명령 실행)·write_file(파일 쓰기)·read_file(파일 읽기).
+
+    무슨 일을 하나: AI에게 도구를 주고 "직접 만들고, 빌드 통과가 아니라 '실제로 동작'할 때까지 확인하라"고
+        시킨다. AI가 도구를 부르면 샌드박스에서 실행해 결과를 돌려주고, AI는 그걸 보고 다음 행동을 정한다.
+    누가 부르나: _run_dev_task (backend/app/services/worker_core.py).
+    처리 순서(최대 40스텝, 기본 30분 제한):
+        1. 역할 + 워크스페이스 규약을 시스템 지시로 깐다.
+        2. 반복: client.complete(LLM 호출) → 도구를 부르면 _exec_tool로 실행해 결과 회신 → 다시 LLM.
+        3. 도구 없이 답만 내놓으면 종료. 'AWAITING_INPUT:'이면 needs-input, 아니면 done.
+        4. 돌린 모든 명령+종료코드를 verification에 기록(= "정말 동작함" 증적).
+    연결: 명령 실행 → 이 파일 _exec_tool → sandbox.py. 결과를 받아 처리 → worker_core.py의 _run_dev_task.
+        (client=LLM 두뇌는 주입형 — 테스트는 스크립트, 프로덕션은 LiteLLM)
+    """
     system = (role_instructions.strip() + "\n\n" + _WORKSPACE_CONVENTIONS).strip()
     messages = [
         {"role": "system", "content": system},

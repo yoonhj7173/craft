@@ -5,7 +5,8 @@ process_task(db, task_id):
   2. engine 라우팅:
      - crew  : 프롬프트 조립 → CrewAI 1회 실행(주입/실 LLM) → 결과 분류
                DONE→done(+output file+tokens/cost+memory) / NEEDS_INPUT→needs-input / FAILED→failed
-     - agent_sdk: 아직 미구현(item 18) → failed로 스텁(BLOCKED until item 18)
+     - agent_sdk: 개발/디자인팀(코딩) 경로. 샌드박스에서 코드 실행 + 출력 수집.
+               development+CMA 설정이면 run_dev_task_cma(cma_engine), 그 외(design 등)는 _run_dev_task(E2B).
   3. 토큰/비용: model_used × pricing(usage 없으면 길이 휴리스틱 폴백).
   4. usage 이벤트: Redis project:{id} 채널로 publish(SSE는 item 12에서 소비).
 
@@ -63,9 +64,13 @@ def _append_memory(db: Session, agent_id, output: str) -> None:
 
 
 def _finalize_done(db: Session, task: Task, tokens_in: int, tokens_out: int, cost: float) -> list:
-    """done 공통 마무리(엔진 무관): 메모리 + 알림 + 전파 + 커밋 + 이벤트. 새 child id 반환.
+    """완료 마무리 공통부 — 작업이 끝났을 때 매번 똑같이 해야 하는 뒷정리를 한 곳에 모았다.
 
-    호출부가 이미 status=done 전이 + 아웃풋 행 추가를 마친 상태로 호출한다.
+    무슨 일을 하나: 작업을 done으로 만든 뒤 공통으로 1) 에이전트 기억에 결과 요지 추가
+        2) "완료됐어요" 알림 발행 3) 연결된 다음 에이전트로 일 전파 4) DB 커밋(확정)
+        5) 화면 실시간 갱신용 이벤트(상태/사용량) 발행. 새로 생긴 자식 작업 id들을 돌려준다.
+    누가 부르나: _finish_done(글쓰기팀), _run_dev_task / cma_engine(개발·디자인팀) — 엔진 무관 공통.
+    연결: 전파 규칙 → propagate (backend/app/services/graph_engine.py). 실시간 이벤트 → events.py.
     """
     from app.services import graph_engine
 
@@ -104,10 +109,27 @@ def _enqueue_children(new_ids: list, enqueue) -> None:
 
 
 def process_task(db: Session, task_id: uuid.UUID, *, llm=None, dev_client=None, enqueue=None) -> str:
-    """task 1건을 처리하고 최종 상태 문자열을 반환한다(테스트/관측용).
+    """작업 처리 엔진 — 작업 1건을 실제로 실행하는 일꾼. 에이전트가 '일하는' 바로 그 함수.
 
-    반환: "not_found" | "skipped:<status>" | "not_dispatched" | "done" | "needs-input" | "failed".
-    llm: crew 경로 주입 LLM(테스트 ScriptedLLM). dev_client: agent_sdk 경로 주입 에이전트.
+    이것이 백그라운드 일꾼(워커)의 심장이다. 채팅으로 만들어진 작업이든 자동 전파된 작업이든,
+    결국 전부 여기로 들어와 LLM을 돌리고 결과를 저장하고 다음 단계로 넘긴다.
+
+    무슨 일을 하나: 대기 작업 하나를 받아 → 게이트 통과 확인 → 알맞은 엔진으로 실행 →
+        결과(완료/입력대기/실패)를 분류해 저장 → 완료면 다음 에이전트로 일을 전파한다.
+    누가 부르나: 백그라운드 큐(Celery)가 작업을 꺼낼 때 — backend/app/celery_app.py.
+        (dispatch_task/_spawn이 enqueue로 큐에 올린 것을 워커가 집어 이 함수를 부른다)
+    처리 순서:
+        1. 작업이 아직 queued인지 확인(아니면 건너뜀).
+        2. try_dispatch: 5게이트 통과 + queued→working 전이(원자적). 막히면 그대로 둠.
+        3. 엔진 분기:
+           - agent_sdk(개발/디자인팀): 샌드박스(격리된 가상 컴퓨터)에서 코드를 짜고 검증 → _run_dev_task
+             (개발팀 + CMA 설정이면 Claude 관리형 에이전트 경로 run_dev_task_cma로).
+           - crew(기획/리서치 등 글쓰기팀): 프롬프트 조립 → CrewAI로 LLM 1회 실행 → 결과 분류.
+        4. 결과 분류: done(완료) / needs-input(질문하며 멈춤) / failed(실패).
+        5. 완료면 _finish_done → 결과 저장 + 다음 에이전트로 전파(propagate) + 자식 작업 큐잉.
+    연결: 게이트/전이 → task_service.py. 프롬프트 조립 → prompt.py. 다음 전파 → graph_engine.py.
+        반환값(테스트/관측용): not_found | skipped:<상태> | not_dispatched | done | needs-input | failed.
+        (llm/dev_client 인자를 주입하면 라이브 키 없이 가짜 LLM으로 전체 경로 테스트 가능)
     """
     task = db.get(Task, task_id)
     if task is None:
@@ -175,7 +197,20 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, dev_client=None, 
 
 
 def _run_dev_task(db: Session, task: Task, agent: Agent, model: str, cfg, dev_client, enqueue) -> str:
-    """agent_sdk 경로(Dev/Design) — 워크스페이스에서 dev-runner 실행 + 출력 수집(item 18)."""
+    """개발/디자인 작업 실행 — 격리된 가상 컴퓨터(샌드박스)에서 실제로 코드를 짜고 결과를 거둔다.
+
+    무슨 일을 하나: 글쓰기팀과 달리 개발·디자인팀은 진짜 파일을 만들어야 한다. 그래서 프로젝트별
+        샌드박스(E2B — 안전하게 명령을 돌릴 수 있는 일회용 리눅스 컴퓨터)를 띄우고, 그 안에서
+        dev-runner(AI가 명령을 내려 코드를 작성·실행·검증하는 루프)를 돌린 뒤 바뀐 파일을 수집한다.
+    누가 부르나: process_task의 engine=="agent_sdk" 분기.
+    처리 순서:
+        1. ensure_running: 프로젝트 샌드박스를 켠다(없으면 그때 생성 = lazy).
+        2. assemble_prompt + dev_runner.run_dev_task: 샌드박스 안에서 작업 수행.
+        3. 결과에 따라 needs-input / failed / done 전이.
+        4. done이면 collect_outputs로 바뀐 파일(코드 트리·디자인 PNG)을 아웃풋으로 저장 + _finalize_done.
+        5. pause_if_idle: 더 돌릴 작업이 없으면 샌드박스를 잠재워 비용 절약.
+    연결: 샌드박스 관리 → workspace.py. 실제 실행 루프 → dev_runner.py. 파일 수집 → verification.py.
+    """
     import time
 
     from app.models import Project
@@ -236,9 +271,11 @@ def _run_dev_task(db: Session, task: Task, agent: Agent, model: str, cfg, dev_cl
 
 
 def reap_stale_tasks(db: Session, older_than_sec: int = 600) -> int:
-    """heartbeat(updated_at)이 오래된 working task를 failed로(워커 크래시 복구, §15).
+    """좀비 작업 청소 — 워커가 죽어서 영영 안 끝날 'working' 작업을 찾아 failed 처리한다.
 
-    반환: reap된 task 수. 전파는 절반만 발화되지 않음(failed는 핸드오프 안 함).
+    무슨 일을 하나: 워커 프로세스가 도중에 죽으면 작업이 'working'에 영원히 멈춰 화면에 계속
+        "일하는 중"으로 남는다. 일정 시간(기본 10분) 넘게 갱신 안 된 working 작업을 failed로 정리한다.
+    누가 부르나: 주기적 청소 작업(Celery beat 등). 반환: 정리한 작업 수.
     """
     from datetime import timedelta
 

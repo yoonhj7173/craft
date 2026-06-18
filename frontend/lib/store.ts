@@ -39,6 +39,17 @@ interface StoreState {
 let _eventId = 0;
 const FEED_CAP = 200;
 
+/**
+ * useStore — 화면 전체가 공유하는 단일 상태 보관소(Zustand). 모든 비주얼이 여기서 나온다.
+ *
+ * 무슨 일을 하나: 에이전트별 상태/토큰, 이벤트 피드, 안 읽은 알림 수, 연결 여부, 총 사용량을 한곳에 담는다.
+ *   '권위'(진짜 정보)는 서버 DB이고, 이건 그것의 실시간 투영일 뿐이다. 같은 SSE 이벤트가 화면 곳곳을
+ *   동시에 갱신하므로 부분별로 어긋날 일이 구조적으로 없다.
+ * 누가 쓰나: 맵·HUD·패널 컴포넌트가 useStore(...)로 필요한 조각만 구독한다. SSE가 아래 액션들을 호출해 갱신.
+ * 주요 액션: setSnapshot(/map 전체 교체), applyStatus(상태 1건 갱신+피드 추가), applyUsage(토큰/비용 누적).
+ * 연결: 이 값을 채우는 쪽 → frontend/lib/sse.ts. 색/표정 변환 → frontend/lib/tokens.ts.
+ *   (Spring 비유: 서버가 Entity 원본, 이 store는 화면용 캐시 DTO 모음)
+ */
 export const useStore = create<StoreState>((set) => ({
   agents: {},
   agentMeta: {},

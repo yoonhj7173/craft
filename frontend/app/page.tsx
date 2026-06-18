@@ -26,6 +26,14 @@ const softwareJsonLd = {
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
 };
 
+/**
+ * Landing — 로그인 안 한 방문자가 보는 첫 화면(마케팅 랜딩 '/').
+ *
+ * 무슨 일을 하나: 제품 소개 + Q&A 카드 + 사용 흐름 + '시작하기' 버튼을 그린다. 실제 앱 기능은
+ *   없고, 버튼이 /onboarding으로 보낸다. (Pixi 맵은 안 쓰고 CSS로만 그려 마케팅 페이지를 가볍게 유지)
+ * 누가 부르나: Next.js 라우팅 — 루트 경로 '/' 접속 시.
+ * 연결: 다음 단계 → frontend/app/onboarding/page.tsx.
+ */
 export default function Landing() {
   return (
     <div className="min-h-screen bg-[#FBFAF6] font-nunito text-ink">

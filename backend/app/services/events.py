@@ -27,6 +27,13 @@ def _channel(project_id) -> str:
 
 
 def _publish(project_id, payload: dict) -> None:
+    """이벤트 발행(공통) — 한 프로젝트의 실시간 채널(Redis)로 메시지 한 건을 던진다.
+
+    중요: 발행이 실패해도 무시한다. 이 채널은 '관측용'(화면을 예쁘게 갱신)일 뿐, 진짜 데이터(권위)는
+        항상 DB다. 알림 하나 누락돼도 DB는 멀쩡하므로 작업을 깨뜨리지 않는다.
+    누가 부르나: 아래 emit_status / emit_usage / emit_terminal_notification.
+    연결: 이 채널을 구독해 브라우저로 중계하는 곳 → sse (backend/app/routers/realtime.py).
+    """
     try:
         redis_client.publish(_channel(project_id), json.dumps(payload))
     except Exception:  # noqa: BLE001
@@ -34,7 +41,7 @@ def _publish(project_id, payload: dict) -> None:
 
 
 def emit_status(task: Task) -> None:
-    """task_status 이벤트."""
+    """상태 변경 알림 — 작업 상태가 바뀌었음을 실시간 채널로 쏴서 맵 캐릭터를 갱신시킨다."""
     _publish(task.project_id, {
         "type": "task_status",
         "task_id": str(task.id),
@@ -58,9 +65,12 @@ _NOTIFY_STATUSES = {"done", "blocked", "needs-input", "failed"}
 
 
 def emit_terminal_notification(db: Session, task: Task) -> None:
-    """task가 종결/대기 상태면 notification 행 생성 + 이벤트 publish(D5/D23).
+    """완료/대기 알림 만들기 — 작업이 끝났거나 멈췄을 때 벨에 뜰 알림을 만들고 실시간으로 쏜다.
 
-    호출부가 커밋한다(전이와 같은 트랜잭션). 메시지는 에이전트명 + 상태로 구성.
+    무슨 일을 하나: 작업이 done/failed/needs-input/blocked가 되면, 사용자에게 보여줄 알림 한 줄
+        ("OOO가 끝났어요" 등)을 notifications 테이블에 만들고 실시간 채널로도 발행한다(벨 뱃지 +1).
+    누가 부르나: 작업 마무리 곳곳 — _finalize_done / 각 실패·대기 분기 (backend/app/services/worker_core.py).
+    연결: 알림 목록 조회 → list_notifications (backend/app/routers/realtime.py).
     """
     if task.status not in _NOTIFY_STATUSES:
         return

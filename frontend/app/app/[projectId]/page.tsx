@@ -14,6 +14,21 @@ import { BoardOverlay, OutputsOverlay, SettingsOverlay, type OverlayKind } from 
 
 const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), { ssr: false });
 
+/**
+ * ProjectMap — 제품의 메인 화면. 사무실 맵 + HUD(채팅·벨) + 패널/오버레이를 한 화면에 조립한다.
+ *
+ * 이 컴포넌트가 프론트의 중심 허브다. 백엔드에서 맵 데이터를 받아 그리고, 실시간 연결을 열고,
+ * 사용자의 클릭(에이전트/팀 선택, 채팅 전송, 오버레이 열기)을 모두 여기서 받아 배분한다.
+ *
+ * 무슨 일을 하나:
+ *   - loadMap: /map을 불러 사무실(팀·에이전트·연결선)을 그리고 store에 스냅샷 저장.
+ *   - connectSSE: 실시간 연결을 열어 상태 변화를 화면에 반영.
+ *   - sendChat: 채팅을 백엔드 지휘자에게 보냄(POST /chat).
+ *   - openPanel/openOverlay: 패널(에이전트/팀)과 오버레이(보드/결과물/설정)를 상호배타로 토글.
+ * 누가 부르나: Next.js 라우팅 — /app/{projectId} 접속 시.
+ * 연결: 데이터 로드/전송 → frontend/lib/api.ts(→ 백엔드 projects.py/chat.py). 실시간 → frontend/lib/sse.ts.
+ *   맵 렌더 → components/map/MapCanvas.tsx. 패널 → components/panels/PanelController.tsx.
+ */
 export default function ProjectMap({ params }: { params: { projectId: string } }) {
   const { getToken: clerkToken } = useAuth();
   const getToken = async () => (E2E ? "e2e" : await clerkToken());

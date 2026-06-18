@@ -21,6 +21,12 @@ const STATUS_ICON: Record<string, { glyph: string; cls: string }> = {
 // --- Board ---
 interface BoardData { goals: { id: string | null; title: string; tasks: { id: string; agent_id: string; agent_name: string; status: AgentStatus; instructions: string }[] }[] }
 
+/**
+ * BoardOverlay — '작업 계획' 전체화면 오버레이. 목표별로 묶인 작업들을 칸반처럼 펼쳐 보여준다.
+ *
+ * 무슨 일을 하나: /board를 불러 목표×작업을 그린다. 진행 중/실패/입력대기 작업은 눌러서 해당 에이전트로
+ *   포커스 이동. 누가 부르나: HUD 유틸의 'Board' 버튼 → ProjectMap. 연결: backend/app/routers/realtime.py의 board.
+ */
 export function BoardOverlay({ projectId, getToken, onClose, onFocus }: { projectId: string; getToken: () => Promise<string | null>; onClose: () => void; onFocus: (id: string) => void }) {
   const [data, setData] = useState<BoardData | null>(null);
   useEffect(() => { (async () => setData(await apiFetch(`/api/projects/${projectId}/board`, { token: await getToken() })))().catch(() => setData({ goals: [] })); }, [projectId, getToken]);
@@ -57,6 +63,13 @@ export function BoardOverlay({ projectId, getToken, onClose, onFocus }: { projec
 // --- Outputs ---
 interface OutGroup { task_id: string; agent_name: string; file_count: number; files: { id: string; path: string; mime: string; size_bytes: number }[] }
 
+/**
+ * OutputsOverlay — '결과물' 전체화면 오버레이. 왼쪽에 작업별 파일 목록, 오른쪽에 미리보기.
+ *
+ * 무슨 일을 하나: /outputs로 작업별 파일 트리를 받아 보여주고, 파일을 누르면 /outputs/{id}로 내용을
+ *   불러 오른쪽에 미리본다(바이너리는 다운로드 안내). 작업별 zip 다운로드 링크도 제공.
+ * 누가 부르나: HUD 유틸의 'Outputs' 버튼. 연결: backend/app/routers/outputs.py.
+ */
 export function OutputsOverlay({ projectId, getToken, onClose }: { projectId: string; getToken: () => Promise<string | null>; onClose: () => void }) {
   const [groups, setGroups] = useState<OutGroup[] | null>(null);
   const [sel, setSel] = useState<{ id: string; path: string } | null>(null);
@@ -95,6 +108,13 @@ export function OutputsOverlay({ projectId, getToken, onClose }: { projectId: st
 }
 
 // --- Settings ---
+/**
+ * SettingsOverlay — '설정' 전체화면 오버레이. 탭으로 컨텍스트·메모리·가드레일·프로젝트를 관리한다.
+ *
+ * 무슨 일을 하나: 좌측 탭으로 나뉜 설정 화면. 가드레일 탭에서 하루 비용/동시실행 한도를 조절하고,
+ *   프로젝트 일시정지를 켜고 끈다(켜면 자동 전파까지 전부 멈춤). 프로젝트 탭에서 이름변경·삭제.
+ * 누가 부르나: HUD 유틸의 'Settings' 버튼. 연결: 일시정지 → backend/app/routers/projects.py의 pause/resume.
+ */
 export function SettingsOverlay({ projectId, getToken, projectName, paused, onClose, onChanged }: { projectId: string; getToken: () => Promise<string | null>; projectName: string; paused: boolean; onClose: () => void; onChanged: () => void }) {
   const [tab, setTab] = useState<"context" | "memory" | "guardrails" | "project">("guardrails");
   const [cost, setCost] = useState(10);

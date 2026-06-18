@@ -33,7 +33,12 @@ redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
 
 def get_db() -> Generator[Session, None, None]:
-    """FastAPI 의존성: 요청 스코프 DB 세션."""
+    """DB 연결 빌려주기 — API 요청 하나마다 DB 세션을 열어주고, 끝나면 반드시 닫는다.
+
+    PM 한 줄: Spring의 EntityManager/@Transactional처럼 "요청 1건 = 세션 1개" 수명 관리.
+        API 함수가 `db: Session = Depends(get_db)`로 주입받아 DB를 만지고, 응답이 나가면
+        finally에서 자동으로 닫혀 커넥션 누수를 막는다. (세션 = DB와의 대화 통로 한 개)
+    """
     db = SessionLocal()
     try:
         yield db

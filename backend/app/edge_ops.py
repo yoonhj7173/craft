@@ -53,7 +53,19 @@ def validate_and_build_edge(
     type: str,
     max_iterations: int | None,
 ) -> Edge:
-    """엣지를 검증하고 (커밋 전) Edge 객체를 만들어 session에 add한다. 위반 시 HTTPException."""
+    """연결선 만들기(검증 포함) — 에이전트 사이 연결(엣지)을 규칙대로 검사하고 만든다.
+
+    무슨 일을 하나: 맵에서 A→B로 선을 그을 때, 잘못된 연결을 막는 규칙을 검사한 뒤 통과하면
+        Edge(연결)를 만든다. 잘못되면 사용자에게 보여줄 에러(HTTPException)를 던진다.
+    검사 규칙:
+        - 종류는 handoff(넘기기) 또는 review_loop(검토 반복) 둘 중 하나.
+        - review_loop면 반복 횟수(max_iterations) 1~10 필수.
+        - 자기 자신에게 연결 금지, 두 에이전트는 같은 프로젝트 소속이어야 함.
+        - 출력은 에이전트당 1개만(이미 나가는 연결이 있으면 409 거부).
+        - handoff는 사이클(빙빙 도는 무한 연결) 금지 — _creates_handoff_cycle로 검사.
+    누가 부르나: POST /api/edges, 그리고 에이전트 추가 시 출력 동시 지정 — backend/app/routers/edges.py, teams.py.
+    연결: 사이클 검사 → 이 파일 _creates_handoff_cycle. 만들어진 연결을 따라 일이 흐름 → graph_engine.py.
+    """
     if type not in ("handoff", "review_loop"):
         raise HTTPException(status_code=422, detail="type must be handoff or review_loop")
 
