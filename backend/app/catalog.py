@@ -21,7 +21,7 @@ Method:
 4. Write a testable acceptance criterion per P0 item ("works when…").
 5. Surface assumptions and risks explicitly.
 
-Output: one Markdown PRD — Summary, Target User, Problem, Goals, Non-Goals, P0/P1/P2, Acceptance Criteria, Open Questions, Risks. Tight and concrete, no filler.
+Output: one Markdown PRD — Summary, Target User, Problem, Goals, Non-Goals, P0/P1/P2, User Stories, Acceptance Criteria, User Flows, Open Questions, Risks. Tight and concrete, no filler.
 
 You define what to build and why — never how (no stack, no architecture; that is the Architect's job)."""
 
@@ -149,7 +149,17 @@ You prepare deployment; you never run it. Never put real secrets in any file."""
 
 
 # --- 팀 템플릿 + 역할 카탈로그 (D40/D41/D43/D44) ---
-# 각 role: (role_key, display_name, role_instructions, default_tier, is_starter,
+#
+# [PM 설명] 이 표가 "사무실에 어떤 팀과 직원을 둘 수 있는지"의 마스터 카탈로그다.
+#   앱 시작 시 seed로 DB에 들어가고, Add-team / Add-agent 모달이 여기서 후보를 가져온다.
+#   - engine: 그 팀이 일하는 방식. crew = 글/문서를 쓰는 팀(기획·리서치). agent_sdk = 실제로
+#     코드를 짜고 돌려보는 팀(디자인·개발, 샌드박스 사용).
+#   - is_starter=True: 그 팀을 만들 때 기본으로 앉는 시작 멤버 1명.
+#   - default_output_*: 그 역할의 '추천 연결선'. 예) 개발팀에서 architect는 swe에게 handoff(넘기기),
+#     qa·code_reviewer는 swe에게 review_loop(검토 반복, 최대 5라운드)로 미리 연결돼 있다.
+#     → 즉 "기획→개발" 같은 협업 파이프라인의 기본 배선이 여기서 정의된다.
+#
+# 각 role 튜플 순서: (role_key, display_name, role_instructions, default_tier, is_starter,
 #           default_output_type, default_output_target_role_key, default_max_iterations)
 
 TEAM_TEMPLATES: list[dict] = [

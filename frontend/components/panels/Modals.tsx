@@ -15,6 +15,14 @@ export interface AgentSubmit {
   output?: { type: "handoff" | "review_loop"; to_agent_id: string; max_iterations?: number };
 }
 
+/**
+ * AddAgentModal — '직원 채용' 모달. 역할을 고르면 이름/등급/지시문이 자동으로 채워지고, 출력 연결도 정한다.
+ *
+ * 무슨 일을 하나: 역할 카탈로그에서 역할을 고르면 추천값을 프리필(편집 가능)한다. 출력은 3택 —
+ *   handoff(다음 사람에게 넘기기) / review_loop(검토 반복) / final(최종 결과, 다음 없음). 제출하면
+ *   onSubmit으로 부모에 넘긴다(역할/이름/지시문/등급/출력연결).
+ * 누가 부르나: PanelController(sel.kind==="addAgent"). 연결: 제출 → POST /api/teams/{id}/agents (teams.py).
+ */
 export function AddAgentModal({ roles, teamAgents, full, onClose, onSubmit }: {
   roles: RoleTemplate[]; teamAgents: AgentRow[]; full: boolean; onClose: () => void; onSubmit: (a: AgentSubmit) => void;
 }) {
@@ -82,6 +90,13 @@ export function AddAgentModal({ roles, teamAgents, full, onClose, onSubmit }: {
   );
 }
 
+/**
+ * AddTeamModal — '팀 추가' 모달. 템플릿(기획/리서치/디자인/개발) 중 하나를 골라 새 방을 만든다.
+ *
+ * 무슨 일을 하나: 팀 템플릿들을 카드로 보여준다. 이미 사무실에 있는 팀은 'In office'로 비활성화.
+ *   하나 고르면 onSubmit(key)로 부모에 넘긴다.
+ * 누가 부르나: PanelController(sel.kind==="addTeam"). 연결: 제출 → POST /api/projects/{id}/teams (teams.py).
+ */
 export function AddTeamModal({ templates, inOffice, onClose, onSubmit }: {
   templates: TeamTemplate[]; inOffice: Set<string>; onClose: () => void; onSubmit: (key: string) => void;
 }) {

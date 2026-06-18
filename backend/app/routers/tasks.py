@@ -41,6 +41,12 @@ def stop_task(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> None:
+    """작업 멈춤 버튼 — 에이전트 패널의 'Stop'을 눌렀을 때 진행 중인 작업을 강제 종료한다.
+
+    무슨 일을 하나: 작업을 멈추고(failed+stopped), 개발/디자인 작업이면 샌드박스에서 돌던 명령도 죽인다.
+    누가 부르나: 에이전트 패널 Stop — frontend/components/panels/PanelController.tsx.
+    연결: 멈춤 로직 본체 → stop (backend/app/services/task_service.py).
+    """
     task = _load_owned_task(db, scope, task_id)
     project = db.get(Project, task.project_id)
 
@@ -61,6 +67,13 @@ def continue_task(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> None:
+    """입력 제공 버튼 — 질문하며 멈춘 에이전트에게 패널에서 직접 답을 주고 작업을 재개한다.
+
+    무슨 일을 하나: blocked/needs-input(입력 대기) 작업에 사용자 입력을 붙이고 다시 큐에 올린다.
+        (지휘자 채팅의 resume_task와 같은 일을, 에이전트 패널 UI에서 직접 하는 경로)
+    누가 부르나: 에이전트 패널의 입력칸 제출 — frontend/components/panels/PanelController.tsx.
+    연결: 입력 붙이기 본체 → request_continue (backend/app/services/task_service.py).
+    """
     task = _load_owned_task(db, scope, task_id)
     if task.status not in ("blocked", "needs-input"):
         raise HTTPException(status_code=409, detail="task is not awaiting input")

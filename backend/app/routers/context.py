@@ -38,6 +38,16 @@ async def upload_context(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> ContextFileOut:
+    """자료 업로드 — 프로젝트에 참고 자료(txt/md/pdf)를 올려 에이전트들이 참고하게 한다.
+
+    무슨 일을 하나: 파일을 받아 텍스트를 뽑아내(extract) 저장한다. 이 추출 텍스트는 나중에
+        에이전트가 일할 때 프롬프트에 '통째로' 들어간다(검색 없이 전문 주입 = no RAG, D14).
+        원본은 따로 보관(텍스트는 text 컬럼, PDF는 바이너리).
+    누가 부르나: 설정의 컨텍스트 업로드 — frontend/components/overlays/Overlays.tsx.
+    처리 순서: 1) 소유권 확인 2) 10MB 상한 검사 3) extract로 텍스트 추출(+허용 타입 검사)
+        4) 추출 텍스트 + 원본 저장.
+    연결: 텍스트 추출 → extract.py. 프롬프트에 주입되는 곳 → _context_block (backend/app/services/prompt.py).
+    """
     project = load_owned_project(db, scope, project_id)
     data = await file.read()
     if len(data) > MAX_CONTEXT_BYTES:

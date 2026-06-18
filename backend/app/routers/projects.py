@@ -52,7 +52,14 @@ _ROOM_ROW_H = 420
 
 
 def _build_map(db: Session, project: Project) -> MapOut:
-    """프로젝트를 맵 투영으로 직렬화한다."""
+    """맵 데이터 만들기 — 사무실 화면을 그리는 데 필요한 모든 것을 한 덩어리로 묶어 내보낸다.
+
+    무슨 일을 하나: 프론트의 사무실 맵 화면은 이 한 번의 응답으로 그려진다. 팀(방)들 + 각 방의
+        에이전트(자리/상태/모델등급) + 에이전트 사이 연결선(엣지) + 일시정지 여부를 모아 직렬화한다.
+        각 에이전트의 현재 상태는 agent_status_map으로 작업 기록에서 계산해 넣는다.
+    누가 부르나: GET /api/projects/{id}/map → 아래 get_map. 프론트가 화면 진입 시 가장 먼저 부른다.
+    연결: 상태 계산 → status_util.py. 받는 쪽(프론트) → frontend/app/app/[projectId]/page.tsx의 loadMap.
+    """
     status_by_agent = agent_status_map(db, project.id)
 
     teams = (
@@ -137,10 +144,17 @@ def create_project(
     user_id: str = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> ProjectOut:
-    """프로젝트를 트랜잭션으로 클론한다.
+    """프로젝트 생성 — 새 사무실(프로젝트)을 만들고, 고른 팀들을 시작 멤버 1명씩과 함께 채운다.
 
-    선택한 각 팀 템플릿마다 team + starter 에이전트 1개(is_starter 역할, tier=템플릿 기본).
-    starter는 혼자라 엣지는 만들지 않는다(D37/D38). 잘못된 template_key는 400 + 전체 롤백.
+    무슨 일을 하나: 온보딩에서 사용자가 고른 팀 템플릿(기획/리서치/디자인/개발)들을 바탕으로
+        프로젝트 + 각 팀(방) + 각 팀의 '시작 에이전트' 1명을 한꺼번에 만든다.
+    누가 부르나: 온보딩 마지막 단계 — frontend/app/onboarding/page.tsx.
+    처리 순서:
+        1. 고른 template_key들이 실제 존재하는지 검사(없으면 400).
+        2. (온보딩이면) 사용자 프로필 이름 저장.
+        3. 프로젝트 생성 → 각 팀을 2열 그리드 좌표에 배치 → 팀마다 starter 에이전트 1명 생성.
+        4. 전부 한 트랜잭션(전부 성공 아니면 전부 취소하는 묶음)으로 commit. 중간 오류 시 통째 롤백.
+    연결: 팀당 시작 1명이라 이 시점엔 연결선(엣지)이 없다. 이후 팀/에이전트 추가 → teams.py.
     """
     templates = {
         t.key: t for t in db.query(TeamTemplate).filter(TeamTemplate.key.in_(body.template_keys)).all()

@@ -59,10 +59,15 @@ def is_legal(old: str, new: str) -> bool:
 
 
 def transition(db: Session, task: Task, new_status: str, **fields) -> Task:
-    """상태 전이를 검증·적용·로깅한다. 불법이면 IllegalTransition.
+    """상태 바꾸기(검문소) — 작업의 상태를 바꿀 때 반드시 거치는 단 하나의 통로.
 
-    fields로 함께 갱신할 컬럼(result_markdown, error_summary, awaiting_prompt 등)을 받는다.
-    커밋은 호출부 책임(트랜잭션 경계 제어).
+    무슨 일을 하나: 작업 상태(queued/working/done 등)를 바꾸려는 모든 시도가 여기를 지난다.
+        전이표(_LEGAL)에 없는 불법 변경(예: 이미 끝난 done → working)이면 거부(예외)하고,
+        합법이면 상태를 바꾸고 로그를 남긴다. "상태 변경은 무조건 이 함수로만" = 버그 예방의 핵심.
+    누가 부르나: try_dispatch, stop, request_continue, 그리고 worker_core의 작업 처리 곳곳.
+    처리 순서: 1) 현재→새 상태가 합법인지 검사 2) 불법이면 IllegalTransition 예외
+        3) 합법이면 상태 + 함께 넘어온 컬럼(result_markdown 등)을 갱신 4) 로그.
+    연결: 합법 전이표는 이 파일 위쪽 _LEGAL. 커밋(DB 확정)은 호출한 쪽 책임.
     """
     old = task.status
     if not is_legal(old, new_status):
@@ -79,9 +84,18 @@ def transition(db: Session, task: Task, new_status: str, **fields) -> Task:
 
 
 def dispatch_blockers(db: Session, task: Task, cfg: GuardConfig | None = None) -> list[str]:
-    """queued task를 지금 디스패치할 수 없게 막는 게이트 이름 목록(빈 리스트=가능).
+    """디스패치 게이트(5단계 안전장치) — 지금 이 작업을 시작해도 되는지 막는 이유들을 모아 돌려준다.
 
-    순서대로 평가하되 전부 모아 반환(디버깅/관측). try_dispatch는 첫 게이트에서 멈춰도 동일.
+    무슨 일을 하나: 대기(queued) 작업을 실제로 돌리기 전, 5가지 조건을 검사한다. 하나라도
+        걸리면 그 이름을 목록에 담는다. 빈 목록이면 = 지금 시작해도 OK. 비용 폭주·과부하를 막는 곳.
+    5가지 게이트(= 돈/리소스 안전장치):
+        ① project_paused   : 프로젝트가 일시정지 상태면 차단(사용자가 멈춤 버튼 누른 경우).
+        ② agent_busy       : 그 에이전트가 이미 다른 일을 하는 중이면 차단(한 명당 한 번에 1건).
+        ③ concurrency_cap  : 이 사용자가 동시에 돌리는 작업 수가 상한을 넘으면 차단.
+        ④ daily_cost_cap   : 오늘 쓴 LLM 비용이 하루 한도를 넘으면 차단(요금 폭탄 방지).
+        ⑤ goal_chain_budget: 한 목표에 딸린 작업이 너무 많이 불어나면 차단(무한 증식 방지).
+    누가 부르나: try_dispatch가 디스패치 직전에. (관측/디버깅용으론 직접 호출도 가능)
+    연결: 한도 값들(cap/budget)은 config 테이블에서 → load_config (backend/app/services/config_store.py).
     """
     if cfg is None:
         cfg = load_config(db)
@@ -134,10 +148,17 @@ def dispatch_blockers(db: Session, task: Task, cfg: GuardConfig | None = None) -
 
 
 def try_dispatch(db: Session, task: Task) -> bool:
-    """게이트 통과 시 queued→working으로 원자적 디스패치. 성공 True / 막히면 False.
+    """작업 시작 시도 — 5게이트를 통과하면 '대기 → 작업중'으로 바꾸고 출발시킨다.
 
-    경쟁 상황(동시 디스패치가 cap 초과)을 막기 위해 task 행을 FOR UPDATE로 잠그고 게이트를
-    재평가한다. 커밋은 호출부.
+    무슨 일을 하나: 대기 작업을 집어 게이트(dispatch_blockers)를 통과하면 working으로 바꾼다.
+        통과 못 하면 그대로 두고 False(나중에 다시 시도됨).
+    누가 부르나: 백그라운드 워커가 작업을 꺼낼 때 — process_task (backend/app/services/worker_core.py).
+    처리 순서:
+        1. 그 작업 행을 잠근다(FOR UPDATE — 같은 작업을 두 워커가 동시에 집는 경쟁 상태 방지).
+        2. 아직 queued인지 확인(이미 누가 가져갔으면 False).
+        3. dispatch_blockers로 5게이트 재검사 → 걸리면 False.
+        4. 다 통과하면 transition으로 working 전이 → True.
+    연결: 게이트 본체 → 위 dispatch_blockers. 상태 변경 → 위 transition.
     """
     locked = (
         db.query(Task).filter(Task.id == task.id).with_for_update().one()
@@ -154,9 +175,14 @@ def try_dispatch(db: Session, task: Task) -> bool:
 
 
 def stop(db: Session, task: Task, *, kill_hook=None) -> Task:
-    """Stop(D16) — queued/working면 failed + stopped=True. 이미 종결이면 무변경.
+    """작업 멈추기 — 사용자가 'Stop'을 눌렀을 때 진행 중인 작업을 강제 종료한다.
 
-    kill_hook(engine-aware): dev task의 샌드박스 명령 종료(item 18에서 주입). 여기선 호출만.
+    무슨 일을 하나: 작업을 failed로 만들되, 에러로 인한 실패와 구분하려고 stopped=True 표시를 단다.
+        이 표시가 있으면 다음 단계로 일이 전파(handoff)되지 않는다(멈췄는데 뒷일이 굴러가면 안 되므로).
+    누가 부르나: POST /api/tasks/{id}/stop — backend/app/routers/tasks.py.
+    처리 순서: 이미 끝난(done/failed) 작업이면 그대로 둔다. 대기/작업중이면 failed + stopped 표시.
+        dev 작업이면 kill_hook으로 샌드박스에서 돌던 명령도 실제로 죽인다.
+    연결: 멈춤 호출 입구 → backend/app/routers/tasks.py.
     """
     if task.status in TERMINAL:
         return task
@@ -174,7 +200,15 @@ def stop(db: Session, task: Task, *, kill_hook=None) -> Task:
 
 
 def request_continue(db: Session, task: Task, input_text: str, via: str) -> Task:
-    """blocked/needs-input → queued 재큐잉(§14). attempt+1 + continuation append."""
+    """이어서 하기 — 질문하느라 멈춘 작업에 사용자의 답을 붙이고 다시 대기열에 올린다.
+
+    무슨 일을 하나: blocked/needs-input(입력 대기) 작업을 다시 queued로 돌리면서, 사용자가 준
+        입력(답)을 continuations 목록에 쌓는다. 다음에 워커가 이 작업을 다시 돌릴 때, 쌓인 입력이
+        프롬프트에 함께 들어가 에이전트가 "이어서" 일하게 된다. (작업을 처음부터 재실행하되,
+        그동안의 부분 결과 + 추가 입력을 프롬프트에 넣어주는 방식 = §14)
+    누가 부르나: resume_task 도구(orchestrator) 또는 POST /api/tasks/{id}/continue(tasks.py).
+    연결: 쌓인 입력을 프롬프트에 넣는 곳 → assemble_prompt (backend/app/services/prompt.py).
+    """
     if task.status not in ("blocked", "needs-input"):
         raise IllegalTransition(f"cannot continue from {task.status}")
     continuations = list(task.continuations or [])
@@ -208,7 +242,13 @@ def create_task(
     parent_task_id: uuid.UUID | None = None,
     edge_id: uuid.UUID | None = None,
 ) -> Task:
-    """새 task를 queued로 생성한다. engine은 agent의 팀 템플릿에서 비정규화(D43)."""
+    """작업 만들기 — 에이전트에게 줄 새 작업 1건을 '대기(queued)' 상태로 만든다.
+
+    무슨 일을 하나: tasks 테이블에 작업 1줄을 추가한다. 어떤 엔진(crew=글쓰기형 / agent_sdk=코딩형)으로
+        돌릴지는 그 에이전트가 속한 팀 종류를 보고 미리 박아둔다(나중에 빠르게 조회하려고 = 비정규화).
+    누가 부르나: 두 곳 — 사용자 지시(dispatch_task in orchestrator.py)와 자동 전파(_spawn in graph_engine.py).
+    연결: 만든 작업을 실제 처리 → process_task (backend/app/services/worker_core.py).
+    """
     from app.models import Team, TeamTemplate
 
     team = db.get(Team, agent.team_id)

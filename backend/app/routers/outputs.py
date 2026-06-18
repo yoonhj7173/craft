@@ -59,7 +59,13 @@ def list_outputs(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> list[OutputTaskGroupOut]:
-    """프로젝트 아웃풋을 task별로 묶어 트리로 반환(최신 task 먼저)."""
+    """결과물 목록 — 에이전트들이 만든 산출 파일을 '작업별 폴더'처럼 묶어 보여준다.
+
+    무슨 일을 하나: 글쓰기팀은 작업당 파일 1개(output.md), 개발·디자인팀은 작업당 여러 파일(코드
+        트리·PNG)을 만든다. 이걸 task_id로 묶어 "어느 작업이 무슨 파일들을 냈는지" 트리로 돌려준다.
+    누가 부르나: 결과물 오버레이 — frontend/components/overlays/Overlays.tsx의 OutputsOverlay.
+    연결: 개별 파일 미리보기/다운로드 → 이 파일 preview_output / download_output / download_task_zip.
+    """
     project = load_owned_project(db, scope, project_id)
     rows = (
         db.query(Output)

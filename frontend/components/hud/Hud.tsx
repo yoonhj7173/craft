@@ -15,6 +15,15 @@ export interface HudProps {
   onSwitch?: () => void;
 }
 
+/**
+ * Hud — 맵 위에 떠 있는 조작 레이어. 채팅창·알림벨·활동피드·토스트·토큰카운터·유틸버튼을 모은다.
+ *
+ * 무슨 일을 하나: 게임의 HUD처럼 맵 위에 겹쳐지는 UI를 한 묶음으로 배치한다. 표시 내용은 거의 전부
+ *   store에서 파생된다(실시간 갱신). 핵심은 하단 중앙의 OrchestratorChat — 여기서 사용자가 회사를 지휘한다.
+ * 누가 부르나: 메인 맵 화면 — frontend/app/app/[projectId]/page.tsx.
+ * 연결: 상태 소스 → frontend/lib/store.ts. 채팅 전송 → 부모의 onSend → 백엔드 chat.py.
+ *   (내부 하위 컴포넌트: ProjectSwitcher/ActivityFeedAndBell/ToastStack/UtilityStack/TokenCounter/OrchestratorChat)
+ */
 export default function Hud(props: HudProps) {
   const [chatFocused, setChatFocused] = useState(false);
   return (
@@ -133,6 +142,13 @@ function TokenCounter() {
 }
 
 // --- 오케스트레이터 챗(bottom-center) ---
+/**
+ * OrchestratorChat — 회사를 지휘하는 채팅창. 사용자가 한 줄 쓰면 지휘자에게 보내고 답을 말풍선으로 띄운다.
+ *
+ * 무슨 일을 하나: 입력을 받아 사용자 말풍선을 먼저 띄우고(낙관적 업데이트 — 서버 답 전에 화면 먼저 반영),
+ *   onSend로 백엔드에 보내 지휘자 답변이 오면 답 말풍선을 추가한다.
+ * 누가 부르나: Hud. 연결: onSend → ProjectMap.sendChat → POST /chat → run_chat (backend/app/services/orchestrator.py).
+ */
 function OrchestratorChat({ focused, setFocused, onSend }: { focused: boolean; setFocused: (f: boolean) => void; onSend?: HudProps["onSend"] }) {
   const [msg, setMsg] = useState("");
   const [bubbles, setBubbles] = useState<{ role: "user" | "orchestrator"; text: string }[]>([]);

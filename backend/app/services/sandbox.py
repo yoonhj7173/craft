@@ -232,10 +232,14 @@ class E2BSandboxProvider:
 
 
 def get_provider() -> SandboxProvider:
-    """E2B(키 있으면). 키 없으면 dev는 Local 폴백, **프로덕션은 하드 실패**(D29).
+    """샌드박스 종류 고르기 — '어디서 AI 코드를 돌릴지'를 정하는 보안상 가장 중요한 선택.
 
-    프로덕션에서 Local 폴백 = LLM 코드를 제품 호스트에서 직접 실행 = 보안 원칙 위반.
-    따라서 프로덕션은 E2B 키가 없으면 시작을 거부한다.
+    PM 한 줄(⚠️ 보안 핵심): AI가 짠 코드는 절대 제품 서버에서 직접 돌리면 안 된다. 그래서:
+        - E2B 키가 있으면 → E2B(격리된 일회용 microVM)에서 실행 = 안전. 프로덕션은 무조건 이것.
+        - 키가 없고 개발 환경이면 → Local(격리 없이 내 컴퓨터에서 실행). 테스트 코드 검증용으로만.
+        - 키가 없고 '프로덕션'이면 → 아예 시작 거부(예외). Local로 떨어지면 보안 원칙 위반이므로.
+    무슨 일을 하나: 환경과 키 유무를 보고 위 셋 중 하나를 고른다. 누가 부르나: WorkspaceService 초기화.
+    연결: 실행 인터페이스 계약 → 위 SandboxProvider(Protocol). 사용처 → workspace.py.
     """
     from app.config import settings
     if getattr(settings, "e2b_api_key", "") or os.environ.get("E2B_API_KEY"):

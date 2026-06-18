@@ -44,6 +44,16 @@ class SessionResult:
 
 
 class CMAClient:
+    """CMA 서버 통신기 — Anthropic의 'Claude 관리형 에이전트' API와 HTTP로 대화하는 창구.
+
+    PM 한 줄: 이 클래스가 외부 API(api.anthropic.com)를 직접 호출한다(외부 연동 지점). 에이전트·실행환경·
+        세션·기억저장소를 거기서 만들고, 작업 메시지를 보내고, 결과 파일을 받아온다. 우리 코드가 직접
+        에이전트 루프를 돌리는 대신 Anthropic이 그 루프·컨테이너·기억을 관리해준다.
+    누가 쓰나: run_dev_task_cma (backend/app/services/cma_engine.py).
+    주요 메서드: create_environment/create_agent/create_memory_store(초기 1회 셋업),
+        create_session·send_user_message(매 작업), poll_until_idle(끝날 때까지 대기), list_session_outputs/download_file(결과 수거).
+    """
+
     def __init__(self, api_key: str | None = None, timeout: float = 60.0):
         key = api_key or settings.anthropic_api_key
         if not key:
@@ -145,9 +155,13 @@ class CMAClient:
     # --- 폴링(이벤트 리스트 → 우리 상태 재료) ---
     def poll_until_idle(self, session_id: str, *, timeout_sec: float = 600.0,
                         interval: float = 3.0) -> SessionResult:
-        """세션이 terminal(idle non-action / terminated)될 때까지 폴링하고 결과를 모은다.
+        """끝날 때까지 기다리기(폴링) — 에이전트가 일을 마칠 때까지 주기적으로 상태를 물어본다.
 
-        토큰은 span.model_request_end.model_usage 합산. 답변은 agent.message 텍스트.
+        PM 한 줄: 폴링(polling — 결과가 나왔는지 일정 간격으로 계속 되묻는 방식). CMA는 작업이
+            오래 걸리므로, 3초마다 "끝났어?"를 물어 끝나면(idle/terminated) 결과를 모아 돌려준다.
+        무슨 일을 하나: 세션 이벤트들을 읽어 답변 텍스트·토큰 수·종료 상태를 모은다. 제한 시간을
+            넘기면 timeout으로 반환. 결과(SessionResult)는 호출부가 done/needs-input/failed로 매핑한다.
+        누가 부르나: run_dev_task_cma (backend/app/services/cma_engine.py).
         """
         deadline = time.time() + timeout_sec
         while True:

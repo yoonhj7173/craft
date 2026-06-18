@@ -26,9 +26,12 @@ def is_allowed(filename: str) -> bool:
 
 
 def extract(filename: str, data: bytes) -> tuple[str, str]:
-    """(extracted_text, mime)를 반환한다. 허용 외 타입은 400.
+    """텍스트 뽑기 — 업로드된 파일에서 글자만 추출한다(에이전트가 읽을 수 있게).
 
-    txt/md는 utf-8 디코드, pdf는 pdfminer로 텍스트 추출.
+    무슨 일을 하나: 허용된 파일 종류(txt/md는 그대로 디코드, pdf는 글자 추출)에서 텍스트를 뽑아
+        (추출텍스트, 파일종류)를 돌려준다. 허용 안 된 종류면 400으로 거부. 이 텍스트가 나중에
+        에이전트 프롬프트에 통째로 들어간다.
+    누가 부르나: 자료 업로드 — upload_context (backend/app/routers/context.py).
     """
     ext = _ext(filename)
     if ext in TEXT_EXTS:

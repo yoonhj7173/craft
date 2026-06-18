@@ -44,7 +44,18 @@ def sse(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    """project 채널을 SSE로 중계한다(task_status/notification/usage + heartbeat)."""
+    """실시간 스트림(SSE) — 화면을 새로고침 없이 살아있게 만드는 '서버→브라우저' 단방향 통로.
+
+    PM 한 줄: SSE(Server-Sent Events = 서버가 답을 한 번에 안 주고 조각조각 계속 밀어보내는 방식).
+        이 연결 하나를 열어두면, 에이전트 상태가 바뀔 때마다 서버가 브라우저로 "방금 누가 일 시작했어"
+        같은 이벤트를 밀어준다 → 맵 위 캐릭터가 실시간으로 움직이고 알림 벨이 울린다.
+    무슨 일을 하나: Redis의 project:{id} 채널을 구독해, 거기 올라오는 이벤트를 그대로 브라우저로 흘려보낸다.
+        조용할 때도 15초마다 heartbeat(살아있다는 신호)를 보내 연결이 끊기지 않게 한다.
+    누가 부르나: 프론트의 EventSource — frontend/lib/sse.ts의 connectSSE.
+    처리 순서: 1) 소유권 확인 2) Redis 채널 구독 3) 메시지 오면 'data: ...'로 전송, 없으면 heartbeat.
+    연결: 이 채널에 이벤트를 올리는 쪽(발행) → backend/app/services/events.py.
+        받아서 화면에 반영하는 쪽 → frontend/lib/sse.ts + store.ts.
+    """
     load_owned_project(db, scope, project_id)
 
     def gen():
@@ -117,7 +128,12 @@ def board(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> BoardOut:
-    """goals × tasks 투영(D20). goal 없는 task는 'Unassigned' 그룹으로."""
+    """보드 데이터 — 칸반처럼 '목표별로 묶인 작업 목록'을 만들어 보드 화면에 보여준다.
+
+    무슨 일을 하나: 프로젝트의 모든 작업을 목표(goal)별로 묶어서 돌려준다. 목표에 안 묶인 작업은
+        'Unassigned'(미배정) 그룹으로 모은다. 각 작업엔 담당 에이전트 이름과 현재 상태가 붙는다.
+    누가 부르나: 보드 오버레이 — frontend/components/overlays/Overlays.tsx의 BoardOverlay.
+    """
     project = load_owned_project(db, scope, project_id)
     agent_names = {a.id: a.name for a in db.query(Agent).filter(Agent.project_id == project.id).all()}
     tasks = (
@@ -156,7 +172,12 @@ def usage(
     scope: TenantScope = Depends(tenant_scope),
     db: Session = Depends(get_db),
 ) -> UsageOut:
-    """토큰/비용 합계 + 에이전트별/팀별(D12). model_used×pricing은 task에 이미 반영됨."""
+    """사용량/비용 집계 — 이 프로젝트가 LLM을 얼마나 썼는지(토큰·달러)를 합산해 보여준다.
+
+    무슨 일을 하나: 모든 작업의 토큰 수와 추정 비용을 합쳐 전체 합계 + 에이전트별 + 팀별로 묶는다.
+        비용은 작업이 끝날 때 이미 계산돼 저장돼 있어(model_used×단가) 여기선 그냥 더하기만 한다.
+    누가 부르나: 설정/사용량 화면 — frontend/components/overlays/Overlays.tsx의 SettingsOverlay.
+    """
     project = load_owned_project(db, scope, project_id)
 
     # 에이전트별 합.

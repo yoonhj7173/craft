@@ -17,6 +17,14 @@ from app.models import Agent, Edge, Project, Team
 
 
 def load_owned_project(db: Session, scope: TenantScope, project_id: uuid.UUID) -> Project:
+    """내 프로젝트 꺼내기(소유권 검문) — id로 프로젝트를 찾되, 내 것이 아니면 못 찾은 척한다.
+
+    무슨 일을 하나: 프로젝트를 id로 조회하고, 없거나 '내 것이 아니면' 둘 다 똑같이 404로 응답한다.
+        403(권한없음)이 아니라 404(없음)로 주는 이유: 남의 프로젝트가 "존재하긴 한다"는 사실조차
+        숨기기 위함(존재 은폐). 아래 load_owned_team/agent/edge도 전부 같은 패턴이다.
+    누가 부르나: 프로젝트 하위 리소스를 다루는 거의 모든 API 함수가 맨 앞에서 호출(= 출입 검사).
+    연결: 소유 판정 → TenantScope.owns (backend/app/auth.py).
+    """
     project = db.get(Project, project_id)
     if project is None or not scope.owns(project):
         raise HTTPException(status_code=404, detail="Project not found")

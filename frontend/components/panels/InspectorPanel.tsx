@@ -25,6 +25,13 @@ function Tile({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * TeamPanel — 방(팀)을 클릭했을 때 왼쪽에 뜨는 패널. 팀 요약 + 소속 직원 목록 + 추가/삭제 버튼.
+ *
+ * 무슨 일을 하나: 팀 이름·인원·토큰을 보여주고, 직원 목록에서 한 명을 누르면 그 에이전트 패널로 넘어간다.
+ *   '주의 필요'(needs-input/blocked/failed) 인원 수도 표시한다. 화면만 그리고 실제 동작은 콜백으로 위임.
+ * 누가 부르나: PanelController(frontend/components/panels/PanelController.tsx)가 sel.kind==="team"일 때.
+ */
 export function TeamPanel({ data, onClose, onAddAgent, onSelectAgent, onRemove }: {
   data: TeamPanelData; onClose: () => void; onAddAgent: () => void; onSelectAgent: (id: string) => void; onRemove: () => void;
 }) {
@@ -58,6 +65,16 @@ export function TeamPanel({ data, onClose, onAddAgent, onSelectAgent, onRemove }
   );
 }
 
+/**
+ * AgentPanel — 직원(에이전트)을 클릭했을 때 뜨는 상세 패널. 상태에 따라 다른 조작 버튼을 보여준다.
+ *
+ * 무슨 일을 하나: 이름·역할·모델·연결선·토큰·상태를 보여준다. 상태별로 UI가 달라진다:
+ *   - 일하는 중(working/queued) → 'Stop task' 버튼.
+ *   - 입력 대기(needs-input/blocked) → 에이전트의 질문 + 답 입력칸('Send & resume').
+ *   - 실패(failed) → 에러 요약. / 멈춰 있으면 → 'Remove agent'.
+ * 누가 부르나: PanelController가 sel.kind==="agent"일 때.
+ * 연결: 버튼 동작(onStop/onProvideInput/onRemove) → PanelController → 백엔드 tasks.py/teams.py.
+ */
 export function AgentPanel({ data, onClose, onStop, onRemove, onProvideInput }: {
   data: AgentPanelData; onClose: () => void; onStop: () => void; onRemove: () => void; onProvideInput: (text: string) => void;
 }) {

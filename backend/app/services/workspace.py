@@ -43,7 +43,15 @@ class WorkspaceService:
             return False
 
     def ensure_running(self, db: Session, project: Project) -> str:
-        """실행 중 샌드박스 id를 보장한다(생성/재개/재생성). 실패 시 WorkspaceError."""
+        """샌드박스 켜기 보장 — 코딩에 쓸 가상 컴퓨터를 '지금 돌아가는 상태'로 만들어준다.
+
+        PM 한 줄: 샌드박스(E2B = 안전하게 코드를 돌릴 수 있는 일회용 리눅스 컴퓨터)는 프로젝트당 1개.
+            비용 때문에 평소엔 꺼두거나 재워두고, 개발·디자인 작업이 처음 필요할 때 그때 켠다(lazy).
+        무슨 일을 하나: 이미 켜져 있고 살아있으면 그대로, 재워뒀으면 깨우고(resume), 없거나 죽었으면 새로 만든다.
+            켜기/깨우기 실패 시 sandbox_status='error' + WorkspaceError를 던져 호출부가 작업을 깔끔히 실패시킨다.
+        누가 부르나: _run_dev_task / cma_engine (backend/app/services/worker_core.py, cma_engine.py).
+        연결: 실제 컨테이너 조작 → sandbox.py의 프로바이더. 다 쓰면 재우기 → 아래 pause_if_idle.
+        """
         # 이미 running이고 살아있으면 그대로.
         if project.sandbox_id and project.sandbox_status == "running" and self._alive(project.sandbox_id):
             return project.sandbox_id
@@ -86,7 +94,12 @@ class WorkspaceService:
         )
 
     def pause_if_idle(self, db: Session, project: Project) -> bool:
-        """진행 중 dev/design task가 없으면 pause(과금 정지). pause했으면 True."""
+        """한가하면 재우기 — 더 돌릴 개발/디자인 작업이 없으면 샌드박스를 일시정지해 돈을 아낀다.
+
+        무슨 일을 하나: 진행 중(queued/working)인 agent_sdk 작업이 하나도 없으면 샌드박스를 pause한다.
+            샌드박스는 켜져 있는 동안 과금되므로, 일이 끝나면 바로 재워 비용을 줄인다.
+        누가 부르나: 개발/디자인 작업이 끝날 때마다 — _run_dev_task / cma_engine.
+        """
         if not project.sandbox_id or project.sandbox_status != "running":
             return False
         if self._has_active_dev_task(db, project.id):
@@ -113,7 +126,11 @@ class WorkspaceService:
             log.warning("kill_current failed", extra={"project_id": str(project.id)})
 
     def destroy(self, db: Session, project: Project) -> None:
-        """샌드박스 파기 + 북킹 초기화(프로젝트 삭제 시)."""
+        """샌드박스 완전 폐기 — 프로젝트를 지울 때 딸린 가상 컴퓨터도 같이 없애 자원을 정리한다.
+
+        무슨 일을 하나: 샌드박스를 파기하고 프로젝트의 sandbox 기록을 초기화한다.
+        누가 부르나: 프로젝트 삭제 — delete_project (backend/app/routers/projects.py)에서 DB cascade 전에.
+        """
         if project.sandbox_id:
             try:
                 self.provider.destroy(project.sandbox_id)

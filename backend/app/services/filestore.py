@@ -27,7 +27,13 @@ class FileStore(Protocol):
 
 
 class PostgresFileStore:
-    """내용을 행 컬럼에 인라인 저장한다(MVP)."""
+    """파일 저장소(현재 구현) — 파일 내용을 DB 행 안에 직접 담아둔다.
+
+    PM 한 줄: '파일을 어디에 둘지'를 한 곳에 가둬, 나중에 S3 같은 클라우드 저장소로 바꿔도
+        라우터/서비스 코드는 그대로 두고 이 클래스만 갈아끼우면 되게 만든 설계(=인터페이스 분리).
+        지금(MVP)은 간단하게 DB 컬럼에 내용을 인라인 저장한다. 텍스트는 content, 바이너리는 content_bytes.
+    누가 쓰나: 컨텍스트 업로드(context.py), 결과물 저장/조회(outputs.py, worker_core.py).
+    """
 
     def put_text(self, row: HasContent, text: str, *, mime: str) -> None:
         row.content = text
