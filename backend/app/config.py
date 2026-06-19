@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     clerk_secret_key: str = Field(default="", alias="CLERK_SECRET_KEY")
     # Slack 운영 알림 Incoming Webhook(opt-in). 미설정 시 알림 no-op. URL이 채널(#proj-pondas)에 묶임.
     slack_alert_webhook_url: str = Field(default="", alias="SLACK_ALERT_WEBHOOK_URL")
+
+    # --- Billing: Stripe (D46, sandbox 먼저 → live 스왑) ---
+    stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
+    stripe_webhook_secret: str = Field(default="", alias="STRIPE_WEBHOOK_SECRET")
     # publishable key는 frontend API 도메인을 base64로 인코딩하고 있어, 여기서
     # issuer/JWKS URL을 유도한다(app/auth.py). 시크릿이 아니다(클라이언트도 보유).
     clerk_publishable_key: str = Field(

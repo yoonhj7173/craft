@@ -95,3 +95,21 @@ def test_refund_system_failure_adds_back(db):
     assert after == 100
     r = db.query(CreditLedger).filter_by(user_id=uid, reason="refund_system_failure").one()
     assert r.delta == cost and r.balance_after == 100
+
+
+def test_topup_adds_credits_with_stripe_ref(db):
+    uid = _uid()
+    after = cs.topup(db, uid, 1500, stripe_ref="cs_test_123")
+    assert after == 1500
+    r = db.query(CreditLedger).filter_by(user_id=uid, reason="topup").one()
+    assert r.delta == 1500 and r.stripe_ref == "cs_test_123"
+
+
+def test_subscription_refill_sets_plan_and_adds_allowance(db):
+    uid = _uid()
+    after = cs.apply_subscription_refill(db, uid, "pro", 8000, stripe_ref="in_test_1")
+    assert after == 8000
+    acct = cs.get_or_create_account(db, uid)
+    assert acct.plan == "pro" and acct.monthly_allowance == 8000
+    r = db.query(CreditLedger).filter_by(user_id=uid, reason="monthly_refill").one()
+    assert r.delta == 8000 and r.stripe_ref == "in_test_1"
