@@ -11,6 +11,7 @@ import type { MapData } from "@/lib/map/types";
 import Hud from "@/components/hud/Hud";
 import { PanelController, type Selection } from "@/components/panels/PanelController";
 import { BoardOverlay, OutputsOverlay, SettingsOverlay, type OverlayKind } from "@/components/overlays/Overlays";
+import { TreasuryTile, BillingModal } from "@/components/billing/Treasury";
 
 const MapCanvas = dynamic(() => import("@/components/map/MapCanvas"), { ssr: false });
 
@@ -36,6 +37,7 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Selection>({ kind: "none" });
   const [overlay, setOverlay] = useState<OverlayKind>(null);
+  const [billingOpen, setBillingOpen] = useState(false);
 
   async function loadMap() {
     const token = await getToken();
@@ -127,6 +129,9 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
           <UserButton afterSignOutUrl="/" />
         </div>
       )}
+      {/* Treasury HUD 타일 + 충전 모달(빌링 D46). */}
+      <TreasuryTile getToken={getToken} onOpen={() => setBillingOpen(true)} />
+      {billingOpen && <BillingModal getToken={getToken} onClose={() => setBillingOpen(false)} />}
       <PanelController projectId={params.projectId} getToken={getToken} mapData={data} sel={sel} setSel={setSel} onChanged={loadMap} />
       {overlay === "board" && <BoardOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} onFocus={(id) => { setOverlay(null); setSel({ kind: "agent", id }); }} />}
       {overlay === "outputs" && <OutputsOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} />}
