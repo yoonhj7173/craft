@@ -73,6 +73,18 @@ def test_unknown_event_ignored(db):
     assert stripe_service.handle_event(db, _evt("payment_intent.created", {})) == "ignored:payment_intent.created"
 
 
+def test_billing_summary_endpoint(client, auth):
+    uid = _uid()
+    # 계정 없을 때 기본값(생성 안 함).
+    r = client.get("/billing/summary", headers=auth(uid))
+    assert r.status_code == 200
+    assert r.json() == {"balance": 0, "plan": "free", "monthly_allowance": 0}
+    # 탑업 후 반영.
+    s = SessionLocal()
+    cs.topup(s, uid, 500); s.commit(); s.close()
+    assert client.get("/billing/summary", headers=auth(uid)).json()["balance"] == 500
+
+
 def test_create_checkout_session_sets_metadata(db, monkeypatch):
     uid = _uid()
     captured = {}

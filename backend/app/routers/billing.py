@@ -17,11 +17,26 @@ from app.auth import require_user
 from app.config import settings
 from app.db import get_db
 from app.logging_config import get_logger
+from app.models import CreditAccount
 from app.services import stripe_service
 from app.services.slack_alerts import send_slack_alert
 
 router = APIRouter(tags=["billing"])
 log = get_logger("app.billing")
+
+
+@router.get("/billing/summary")
+def billing_summary(
+    user_id: str = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """treasury 표시용 — 잔액/플랜/월 allowance. 읽기 전용(계정 없으면 기본값, 생성 안 함)."""
+    a = db.get(CreditAccount, user_id)
+    return {
+        "balance": a.balance if a else 0,
+        "plan": a.plan if a else "free",
+        "monthly_allowance": a.monthly_allowance if a else 0,
+    }
 
 
 class CheckoutBody(BaseModel):
