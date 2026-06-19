@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -62,6 +64,24 @@ async def lifespan(app: FastAPI):
     log.info("app shutdown")
 
 
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """처리되지 않은 서버 에러를 로깅하고 Slack으로 알린 뒤 500 응답(slack 미설정 시 알림만 no-op).
+
+    Slack POST는 동기 httpx라 이벤트 루프 안 막게 스레드풀로 던진다. 알림 실패는 자체 삼킴.
+    """
+    import traceback
+
+    from app.services.slack_alerts import send_slack_alert
+
+    where = f"{request.method} {request.url.path}"
+    log.exception("unhandled error: %s", where)
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    await run_in_threadpool(
+        send_slack_alert, f"prod error · {where}", f"{type(exc).__name__}: {exc}\n{tb[-1200:]}"
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="cursor-pm backend", version="0.1.0", lifespan=lifespan)
 
@@ -69,6 +89,10 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
+
+    # 처리 안 된 서버 에러(500)만 Slack 알림(opt-in). HTTPException/4xx/429는 정상 흐름 → 제외
+    # (더 구체적인 핸들러가 우선하므로 여기엔 진짜 unhandled만 옴). 응답은 평소처럼 500.
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
 
     app.add_middleware(
         CORSMiddleware,

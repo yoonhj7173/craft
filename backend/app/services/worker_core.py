@@ -28,6 +28,7 @@ from app.services import events
 from app.services import task_service as ts
 from app.services.config_store import cost_usd, load_config, model_for_tier
 from app.services.prompt import assemble_prompt
+from app.services.slack_alerts import send_slack_alert
 
 log = logging.getLogger("app.worker")
 
@@ -198,6 +199,7 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, dev_client=None, 
         output = _coerce_output(raw)
     except Exception as exc:  # noqa: BLE001 — 워커 경계.
         _refund_if_billing(db, task, agent, cfg)  # 시스템 실패(크래시) → 환불
+        send_slack_alert(f"agent run crashed · {agent.name}", f"{type(exc).__name__}: {exc}")
         ts.transition(db, task, "failed", error_summary=f"{type(exc).__name__}: {exc}")
         events.emit_terminal_notification(db, task)
         db.commit()
@@ -251,6 +253,7 @@ def _run_dev_task(db: Session, task: Task, agent: Agent, model: str, cfg, dev_cl
         sandbox_id = workspace_service.ensure_running(db, project)
     except WorkspaceError as exc:
         _refund_if_billing(db, task, agent, cfg)  # 샌드박스 기동 실패 = 시스템 실패 → 환불
+        send_slack_alert(f"sandbox start failed · {agent.name}", str(exc))
         ts.transition(db, task, "failed", error_summary=str(exc))
         events.emit_terminal_notification(db, task)
         db.commit(); events.emit_status(task)

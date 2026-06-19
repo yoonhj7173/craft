@@ -48,6 +48,10 @@ def run_task(task_id: str) -> str:
     db = SessionLocal()
     try:
         return process_task(db, uuid.UUID(task_id))
+    except Exception as exc:  # process_task를 빠져나온 예외 = 워커 자체 크래시 → 알림 후 재던짐.
+        from app.services.slack_alerts import send_slack_alert
+        send_slack_alert(f"worker crash · task {task_id}", f"{type(exc).__name__}: {exc}")
+        raise
     finally:
         db.close()
 
