@@ -113,3 +113,22 @@ def charge_task(db: Session, user_id: str, task_id, model_tier: str | None) -> i
 def refund_task(db: Session, user_id: str, task_id, credits: int) -> int:
     """시스템 실패(우리 잘못) 환불 — 차감분을 크레딧으로 되돌림(D46 B-4). 현금 환불 아님."""
     return _post(db, user_id, credits, "refund_system_failure", task_id=task_id)
+
+
+def topup(db: Session, user_id: str, credits: int, stripe_ref: str | None = None) -> int:
+    """크레딧 팩 구매 적립(D46) — Stripe 결제 성공 웹훅이 호출. 탑업 크레딧은 소멸 없음(B-3)."""
+    return _post(db, user_id, credits, "topup", stripe_ref=stripe_ref)
+
+
+def apply_subscription_refill(
+    db: Session, user_id: str, plan: str, allowance: int, stripe_ref: str | None = None
+) -> int:
+    """구독 결제 성공 시 — 플랜 설정 + 월 allowance 적립(D46).
+
+    invoice.paid 웹훅이 매 청구주기 호출. MVP는 가산식(미사용분 전액 이월). D46 B-3의 1개월 캡
+    이월/탑업-월분 버킷 분리는 추후 정교화 지점. 새 잔액 반환.
+    """
+    acct = get_or_create_account(db, user_id)
+    acct.plan = plan
+    acct.monthly_allowance = allowance
+    return _post(db, user_id, allowance, "monthly_refill", stripe_ref=stripe_ref)
