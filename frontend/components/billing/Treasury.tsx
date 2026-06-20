@@ -81,7 +81,7 @@ export function TreasuryTile({ getToken, onOpen }: { getToken: GetToken; onOpen:
 }
 
 /** BillingModal — 잔액 + 팩/플랜 선택 → Embedded Checkout(모달 내 결제). */
-export function BillingModal({ getToken, onClose }: { getToken: GetToken; onClose: () => void }) {
+export function BillingModal({ getToken, paywall, onClose }: { getToken: GetToken; paywall?: boolean; onClose: () => void }) {
   const [s, setS] = useState<Summary | null>(null);
   const [item, setItem] = useState<string | null>(null);
   useEffect(() => {
@@ -148,6 +148,13 @@ export function BillingModal({ getToken, onClose }: { getToken: GetToken; onClos
           </div>
           {s?.plan && s.plan !== "free" && <div className="mt-1 text-xs font-semibold text-muted">Plan: {s.plan}</div>}
         </div>
+
+        {/* 소진으로 자동 노출된 경우(D46 페이월) — 왜 떴는지 + 다음 행동을 명확히. */}
+        {paywall && (
+          <div className="border-b border-[#f0e2c8] bg-[#fff7e6] px-5 py-3 text-sm font-semibold text-[#8a5a08]">
+            Out of credits — top up to keep your team working.
+          </div>
+        )}
 
         <div className="p-5">
           {item ? (

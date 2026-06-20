@@ -27,11 +27,14 @@ interface StoreState {
   unread: number;
   connected: boolean;
   usage: { tokensIn: number; tokensOut: number; cost: number };
+  paywall: boolean; // 크레딧 부족으로 task가 막힘 → 결제 모달 자동 노출 신호(D46).
 
   setSnapshot: (data: MapData) => void;
   applyStatus: (agentId: string, status: AgentStatus) => void;
   applyUsage: (agentId: string, tin: number, tout: number, cost: number) => void;
   applyNotification: (agentId: string, type: string, message: string) => void;
+  triggerPaywall: () => void;
+  clearPaywall: () => void;
   markAllRead: () => void;
   setConnected: (c: boolean) => void;
 }
@@ -57,6 +60,7 @@ export const useStore = create<StoreState>((set) => ({
   unread: 0,
   connected: false,
   usage: { tokensIn: 0, tokensOut: 0, cost: 0 },
+  paywall: false,
 
   // /map 스냅샷으로 교체(초기 + 재연결 reconcile).
   setSnapshot: (data) =>
@@ -95,6 +99,8 @@ export const useStore = create<StoreState>((set) => ({
   applyNotification: (agentId, type, message) =>
     set((s) => ({ unread: s.unread + 1 })),
 
+  triggerPaywall: () => set({ paywall: true }),
+  clearPaywall: () => set({ paywall: false }),
   markAllRead: () => set({ unread: 0 }),
   setConnected: (c) => set({ connected: c }),
 }));
