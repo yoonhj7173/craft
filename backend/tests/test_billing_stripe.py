@@ -27,23 +27,30 @@ def _uid() -> str:
     return f"pay_{uuid.uuid4().hex[:10]}"
 
 
+def _ref(prefix="cs") -> str:
+    # handle_event가 db.commit()을 하므로 고정 ref는 실행마다 누적 → 멱등 가드가 스킵.
+    # 테스트 격리를 위해 stripe_ref를 매번 유니크하게.
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
 def _evt(etype, obj):
     return {"type": etype, "data": {"object": obj}}
 
 
 def test_topup_on_payment_checkout(db):
     uid = _uid()
+    ref = _ref()
     evt = _evt("checkout.session.completed",
-               {"id": "cs_1", "mode": "payment", "metadata": {"user_id": uid, "credits": "1500"}})
+               {"id": ref, "mode": "payment", "metadata": {"user_id": uid, "credits": "1500"}})
     assert stripe_service.handle_event(db, evt) == "topup"
     assert cs.balance(db, uid) == 1500
-    assert db.query(CreditLedger).filter_by(user_id=uid, reason="topup").one().stripe_ref == "cs_1"
+    assert db.query(CreditLedger).filter_by(user_id=uid, reason="topup").one().stripe_ref == ref
 
 
 def test_subscription_checkout_is_ignored(db):
     uid = _uid()
     evt = _evt("checkout.session.completed",
-               {"id": "cs_2", "mode": "subscription", "metadata": {"user_id": uid, "credits": "2000"}})
+               {"id": _ref(), "mode": "subscription", "metadata": {"user_id": uid, "credits": "2000"}})
     assert stripe_service.handle_event(db, evt) == "ignored:subscription-checkout"
     assert cs.balance(db, uid) == 0                    # invoice.paid가 처리 → 중복 적립 방지
 
@@ -52,7 +59,7 @@ def test_invoice_paid_refills_subscription(db):
     # Stripe 신버전 구조: parent.subscription_details.metadata에서 직접 읽는다(retrieve 불필요).
     uid = _uid()
     evt = _evt("invoice.paid", {
-        "id": "in_1", "customer": "cus_x",
+        "id": _ref("in"), "customer": "cus_x",
         "parent": {"subscription_details": {
             "subscription": "sub_1",
             "metadata": {"user_id": uid, "plan": "pro", "credits": "8000"},
@@ -71,9 +78,36 @@ def test_invoice_paid_legacy_subscription_field(db, monkeypatch):
         stripe_service.stripe.Subscription, "retrieve",
         lambda sid: {"metadata": {"user_id": uid, "plan": "starter", "credits": "2000"}},
     )
-    evt = _evt("invoice.paid", {"id": "in_2", "subscription": "sub_2"})
+    evt = _evt("invoice.paid", {"id": _ref("in"), "subscription": "sub_2"})
     assert stripe_service.handle_event(db, evt) == "refill"
     assert cs.get_or_create_account(db, uid).plan == "starter"
+
+
+def test_topup_idempotent_on_resend(db):
+    # 웹훅 중복 전송(BUG-7): 같은 checkout 세션 id로 두 번 와도 한 번만 적립.
+    uid = _uid()
+    ref = _ref()
+    evt = _evt("checkout.session.completed",
+               {"id": ref, "mode": "payment", "metadata": {"user_id": uid, "credits": "1500"}})
+    assert stripe_service.handle_event(db, evt) == "topup"
+    stripe_service.handle_event(db, evt)                  # 재전송
+    assert cs.balance(db, uid) == 1500                    # 두 배 안 됨
+    assert db.query(CreditLedger).filter_by(stripe_ref=ref, reason="topup").count() == 1
+
+
+def test_subscription_refill_idempotent_on_resend(db):
+    # 구독 invoice.paid 중복 전송 시 크레딧 한 번만(BUG-7). plan/allowance 설정은 멱등.
+    uid = _uid()
+    ref = _ref("in")
+    evt = _evt("invoice.paid", {
+        "id": ref, "customer": "cus_x",
+        "parent": {"subscription_details": {"metadata": {"user_id": uid, "plan": "pro", "credits": "8000"}}},
+    })
+    assert stripe_service.handle_event(db, evt) == "refill"
+    stripe_service.handle_event(db, evt)                  # 재전송
+    acct = cs.get_or_create_account(db, uid)
+    assert acct.balance == 8000 and acct.plan == "pro"    # 16000 아님
+    assert db.query(CreditLedger).filter_by(stripe_ref=ref, reason="monthly_refill").count() == 1
 
 
 def test_subscription_deleted_downgrades_to_free(db):
@@ -92,7 +126,7 @@ def test_unknown_event_ignored(db):
 def test_customer_id_captured_on_checkout(db):
     uid = _uid()
     evt = _evt("checkout.session.completed",
-               {"id": "cs_3", "mode": "payment", "customer": "cus_abc",
+               {"id": _ref(), "mode": "payment", "customer": "cus_abc",
                 "metadata": {"user_id": uid, "credits": "500"}})
     stripe_service.handle_event(db, evt)
     acct = cs.get_or_create_account(db, uid)
