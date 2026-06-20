@@ -328,4 +328,29 @@ def reap_stale_tasks(db: Session, older_than_sec: int = 600) -> int:
         n += 1
     if n:
         db.commit()
+
+    # queued인데 30분 넘게 디스패치 안 된 task = 게이트 데드락/유실 신호 → 임계 통과 시 1회 알림
+    # (auto-fail 안 함; queued는 정당하게 대기 중일 수 있음). 직전 reap 주기에 막 넘은 것만 골라 스팸 방지.
+    _alert_stuck_queued(db)
     return n
+
+
+def _alert_stuck_queued(db: Session, stuck_sec: int = 1800) -> None:
+    """30분 넘게 queued에 갇힌 task를 임계 통과 시점에 한 번 Slack 알림(감사 P1 — 침묵 블라인드스팟)."""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    stuck = (
+        db.query(Task)
+        .filter(
+            Task.status == "queued",
+            Task.updated_at < now - timedelta(seconds=stuck_sec),
+            Task.updated_at >= now - timedelta(seconds=stuck_sec + 90),  # 직전 1주기에 막 넘은 것만.
+        )
+        .all()
+    )
+    if not stuck:
+        return
+    ids = ", ".join(str(t.id) for t in stuck[:10])
+    log.warning("stuck queued tasks (>%ds, never dispatched): %s", stuck_sec, ids)
+    send_slack_alert(f"stuck tasks · {len(stuck)} queued >30m (never dispatched)", f"task ids: {ids}")
