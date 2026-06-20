@@ -281,7 +281,10 @@ def _load_history(db: Session, project_id: uuid.UUID, limit: int) -> list[dict]:
         .limit(limit)
         .all()
     )
-    rows.reverse()  # 최신순으로 가져와 캡한 뒤, LLM에는 오래된→최신 순서로 넣는다.
+    # 오래된→최신 정렬. 한 턴의 user/orchestrator는 같은 트랜잭션이라 created_at이 동일할 수 있어
+    # (PostgreSQL now()=txn 시작시각) 정렬이 비결정적 → user를 우선해 user→assistant 순서를 보장한다
+    # (Anthropic은 user로 시작하는 교대 메시지를 요구). created_at desc로 캡한 뒤 여기서 안정 정렬.
+    rows.sort(key=lambda m: (m.created_at, 0 if m.role == "user" else 1))
     return [
         {"role": "assistant" if m.role == "orchestrator" else "user", "content": m.content}
         for m in rows
@@ -330,9 +333,14 @@ def run_chat(
 
     ctx = _Ctx(db=db, project=project, user_id=user_id, enqueue=enqueue)
     # 과거 대화 이력을 system과 현재 메시지 사이에 끼워, 지휘자가 맥락을 이어가게 한다(stateless 해소).
+    history = _load_history(db, project.id, history_limit)
+    # Anthropic은 system 다음 첫 메시지가 user여야 한다. limit 절단으로 이력이 assistant로
+    # 시작할 수 있으니(턴 중간이 잘림) 선두 assistant를 떨어내 항상 user로 시작하게 한다.
+    while history and history[0]["role"] == "assistant":
+        history.pop(0)
     messages = [
         {"role": "system", "content": _system_prompt(ctx)},
-        *_load_history(db, project.id, history_limit),
+        *history,
         {"role": "user", "content": message},
     ]
 
