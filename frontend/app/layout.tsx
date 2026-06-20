@@ -14,6 +14,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: { default: "pondas.ai", template: "%s · pondas.ai" },
   description: "Run a virtual company of AI agents.",
+  verification: { google: "SOUqe-MO6bSO-4pNc1D4FcdW0UJhGR8AjlPHW_OtwDs" },
   openGraph: {
     title: "pondas.ai",
     description: "Run a virtual company of AI agents.",
