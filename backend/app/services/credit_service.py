@@ -15,6 +15,7 @@ CreditAccount.balance 캐시를 갱신한다(원자적). 직접 balance를 만�
 
 from __future__ import annotations
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models import CreditAccount, CreditLedger
@@ -90,7 +91,16 @@ def _post(
     if delta > 0 and stripe_ref and _already_posted(db, stripe_ref):
         return get_or_create_account(db, user_id).balance
     acct = get_or_create_account(db, user_id)
-    acct.balance += delta
+    # 호출자가 미리 바꾼 속성(plan/signup_granted 등)을 먼저 영속화하고 행이 DB에 있게 한다.
+    db.flush()
+    # 잔액은 read-modify-write 대신 원자적 UPDATE로 더한다 — 동시 변동(워커 차감 + 웹훅 충전 등)에서
+    # lost-update/캡 우회를 막는다(감사 P0). DB가 행 단위로 직렬화한다.
+    db.execute(
+        update(CreditAccount)
+        .where(CreditAccount.user_id == user_id)
+        .values(balance=CreditAccount.balance + delta)
+    )
+    db.refresh(acct, attribute_names=["balance"])  # 갱신된 잔액을 ORM 객체에 반영.
     db.add(
         CreditLedger(
             user_id=user_id,

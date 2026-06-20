@@ -25,6 +25,9 @@ BETA = "managed-agents-2026-04-01"
 FILES_BETA = "managed-agents-2026-04-01,files-api-2025-04-14"  # session-output 조회는 헤더 2개.
 DEV_TOOLSET = [{"type": "agent_toolset_20260401"}]  # bash/read/write/edit/glob/grep/web
 SESSION_OUTPUT_DIR = "/mnt/session/outputs"  # 여기 쓴 파일이 files.list(scope_id)로 캡처됨.
+# CMA 루프 턴 상한(감사 P0) — CMA는 에이전트 루프를 Anthropic에 위임해 폴 타임아웃(30분)만 있고
+# 턴 캡이 없어, 모델이 도구호출을 무한 반복하면 30분치 비용을 다 태운다. 모델요청 수로 상한을 건다.
+MAX_MODEL_REQUESTS = 60
 
 
 class CMAError(RuntimeError):
@@ -172,6 +175,9 @@ class CMAClient:
             if term is not None:
                 status, stop_reason, await_ids = term
                 return SessionResult(reply, tin, tout, status, stop_reason, await_ids)
+            # 턴 상한 초과 → 폭주로 간주해 종료(호출부가 terminated/timeout처럼 failed 처리, 감사 P0).
+            if sum(1 for e in evs if e.get("type") == "span.model_request_end") >= MAX_MODEL_REQUESTS:
+                return SessionResult(reply, tin, tout, "timeout", "turn_cap", [])
             if time.time() > deadline:
                 return SessionResult(reply, tin, tout, "timeout", None, [])
             time.sleep(interval)
