@@ -192,6 +192,22 @@ def test_history_loaded_into_next_turn(env):
     assert first_call[-1] == {"role": "user", "content": "what did I say?"}  # 현재 메시지가 맨 끝(중복 없음)
 
 
+def test_history_messages_start_with_user(env):
+    # 회귀(BUG-4): 한 턴의 user/orchestrator는 같은 트랜잭션이라 created_at이 동일 → 정렬이 비결정적이면
+    # 이력이 assistant로 시작해 Anthropic이 거부(500)했다. system 다음 첫 메시지는 항상 user여야 한다.
+    db, uid, pid, swe, qa = env
+    run_chat(db, pid, uid, "first", client=ScriptedClient([LLMResponse(content="ok reply")]), enqueue=lambda x: None)
+    c2 = ScriptedClient([LLMResponse(content="second")])
+    run_chat(db, pid, uid, "dispatch please", client=c2, enqueue=lambda x: None)
+    msgs = c2.seen_messages[0]
+    assert msgs[0]["role"] == "system"
+    assert msgs[1]["role"] == "user"                  # 첫 비-system 메시지는 반드시 user
+    assert "assistant" in [m["role"] for m in msgs]   # 직전 지휘자 답변은 여전히 포함
+    # user/assistant 쌍 순서: user 'first'가 assistant 'ok reply'보다 앞.
+    roles_contents = [(m["role"], m.get("content")) for m in msgs]
+    assert roles_contents.index(("user", "first")) < roles_contents.index(("assistant", "ok reply"))
+
+
 def test_history_limit_zero_disables(env):
     db, uid, pid, swe, qa = env
     run_chat(db, pid, uid, "earlier", client=ScriptedClient([LLMResponse(content="ok")]), enqueue=lambda x: None)
