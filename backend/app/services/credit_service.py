@@ -58,6 +58,20 @@ def credit_cost(model_tier: str | None) -> int:
     return TIER_CREDIT_COST.get(model_tier or "", DEFAULT_TASK_COST)
 
 
+def _already_posted(db: Session, stripe_ref: str) -> bool:
+    """이 stripe_ref로 적립(delta>0)한 원장 줄이 이미 있나 — 웹훅 중복 전송 멱등 가드(BUG-7).
+
+    Stripe는 동일 이벤트를 재시도/중복 전송하며(at-least-once) 멱등 처리를 요구한다.
+    가드 없으면 재전송마다 크레딧이 중복 적립된다.
+    """
+    return (
+        db.query(CreditLedger.id)
+        .filter(CreditLedger.stripe_ref == stripe_ref, CreditLedger.delta > 0)
+        .first()
+        is not None
+    )
+
+
 def _post(
     db: Session,
     user_id: str,
@@ -71,7 +85,10 @@ def _post(
     """잔액 변동 1건 적용 — 원장 1줄 기록 + balance 캐시 갱신. 새 잔액 반환.
 
     모든 크레딧 변동의 단일 통로. balance_after를 원장에 박아 감사 가능하게 한다.
+    stripe_ref가 이미 적립됐으면(웹훅 중복) 스킵하고 현재 잔액 반환(멱등).
     """
+    if delta > 0 and stripe_ref and _already_posted(db, stripe_ref):
+        return get_or_create_account(db, user_id).balance
     acct = get_or_create_account(db, user_id)
     acct.balance += delta
     db.add(
