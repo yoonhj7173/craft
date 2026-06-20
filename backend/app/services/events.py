@@ -60,6 +60,14 @@ def emit_usage(project_id, agent_id, tokens_in: int, tokens_out: int, cost: floa
     })
 
 
+def emit_paywall(project_id, agent_id) -> None:
+    """크레딧 부족으로 task가 막힘 — 프론트가 결제 모달을 자동으로 띄우게 하는 신호(D46 페이월).
+
+    'blocked'는 다른 사유로도 생겨서 일반 알림으론 구분 불가 → 전용 paywall 이벤트를 따로 쏜다.
+    """
+    _publish(project_id, {"type": "paywall", "agent_id": str(agent_id)})
+
+
 # 종결/대기 상태 → 사용자에게 알릴 notification 매핑.
 _NOTIFY_STATUSES = {"done", "blocked", "needs-input", "failed"}
 

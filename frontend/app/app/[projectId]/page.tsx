@@ -38,6 +38,16 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
   const [sel, setSel] = useState<Selection>({ kind: "none" });
   const [overlay, setOverlay] = useState<OverlayKind>(null);
   const [billingOpen, setBillingOpen] = useState(false);
+  const [billingPaywall, setBillingPaywall] = useState(false); // 소진으로 자동 오픈됐는지(배너 카피용).
+  // 크레딧 부족으로 task가 막히면(SSE paywall 이벤트) 결제 모달 자동 노출(D46).
+  const paywall = useStore((s) => s.paywall);
+  useEffect(() => {
+    if (paywall) {
+      setBillingPaywall(true);
+      setBillingOpen(true);
+      useStore.getState().clearPaywall();
+    }
+  }, [paywall]);
 
   async function loadMap() {
     const token = await getToken();
@@ -130,8 +140,8 @@ export default function ProjectMap({ params }: { params: { projectId: string } }
         </div>
       )}
       {/* Treasury HUD 타일 + 충전 모달(빌링 D46). */}
-      <TreasuryTile getToken={getToken} onOpen={() => setBillingOpen(true)} />
-      {billingOpen && <BillingModal getToken={getToken} onClose={() => setBillingOpen(false)} />}
+      <TreasuryTile getToken={getToken} onOpen={() => { setBillingPaywall(false); setBillingOpen(true); }} />
+      {billingOpen && <BillingModal getToken={getToken} paywall={billingPaywall} onClose={() => { setBillingOpen(false); setBillingPaywall(false); }} />}
       <PanelController projectId={params.projectId} getToken={getToken} mapData={data} sel={sel} setSel={setSel} onChanged={loadMap} />
       {overlay === "board" && <BoardOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} onFocus={(id) => { setOverlay(null); setSel({ kind: "agent", id }); }} />}
       {overlay === "outputs" && <OutputsOverlay projectId={params.projectId} getToken={getToken} onClose={() => setOverlay(null)} />}

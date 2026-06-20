@@ -68,14 +68,17 @@ def test_charge_on_successful_task(env, billing_on):
     assert cs.balance(db, uid) == 1000 - cs.credit_cost("medium")
 
 
-def test_insufficient_blocks_and_skips_run(env, billing_on):
+def test_insufficient_blocks_and_skips_run(env, billing_on, monkeypatch):
     db, uid, pid, aid = env
     cs.grant_signup(db, uid, 5); db.commit()          # < medium cost, cap ON 기본
+    paywalls = []
+    monkeypatch.setattr(worker_core.events, "emit_paywall", lambda *a, **k: paywalls.append(a))
     tid = _queued(db, uid, pid, aid)
     assert worker_core.process_task(db, tid, llm=ScriptedLLM(["must not run"])) == "insufficient_credits"
     row = db.get(Task, tid)
     assert row.status == "blocked" and row.result_markdown is None  # 실행 안 됨
     assert cs.balance(db, uid) == 5                    # 차감 없음
+    assert paywalls                                    # 페이월 신호 발행됨(자동 모달 D46)
 
 
 def test_system_failure_refunds(env, billing_on):

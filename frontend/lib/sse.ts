@@ -45,6 +45,7 @@ export function connectSSE(projectId: string, token: string): () => void {
       if (data.type === "task_status") s.applyStatus(data.agent_id, data.status as AgentStatus);
       else if (data.type === "usage") s.applyUsage(data.agent_id, data.tokens_in ?? 0, data.tokens_out ?? 0, data.cost_usd ?? 0);
       else if (data.type === "notification") s.applyNotification(data.agent_id, data.notif_type, data.message);
+      else if (data.type === "paywall") s.triggerPaywall(); // 크레딧 부족 → 결제 모달 자동 노출(D46).
     };
     es.onerror = () => {
       useStore.getState().setConnected(false);

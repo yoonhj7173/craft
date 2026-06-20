@@ -174,6 +174,7 @@ def process_task(db: Session, task_id: uuid.UUID, *, llm=None, dev_client=None, 
             events.emit_terminal_notification(db, task)
             db.commit()
             events.emit_status(task)
+            events.emit_paywall(task.project_id, task.agent_id)  # 결제 모달 자동 노출(D46).
             return "insufficient_credits"
 
     # 엔진 라우팅.
