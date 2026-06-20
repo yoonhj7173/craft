@@ -65,7 +65,8 @@ class TemplateOut(BaseModel):
 class ProjectCreate(BaseModel):
     name: SafeStr = Field(min_length=1, max_length=200)
     # 선택한 팀 템플릿(최소 1개). 온보딩 Flow 0 step 4.
-    template_keys: list[str] = Field(min_length=1)
+    # 각 키도 SafeStr — surrogate/null이 DB 쿼리(IN 절)에 닿기 전에 422로 막는다.
+    template_keys: list[SafeStr] = Field(min_length=1)
     # 온보딩 step 2의 표시 이름(선택). user_profiles에 upsert.
     display_name: SafeStr | None = Field(default=None, max_length=200)
 
@@ -129,7 +130,7 @@ class MapOut(BaseModel):
 
 
 class TeamCreate(BaseModel):
-    template_key: str
+    template_key: SafeStr
 
 
 class TeamPatch(BaseModel):
