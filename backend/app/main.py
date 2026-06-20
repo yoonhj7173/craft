@@ -10,12 +10,16 @@ map/units/tasks/notifications/sse/resources 라우터가 추가될 자리다.
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -65,6 +69,51 @@ async def lifespan(app: FastAPI):
     log.info("app shutdown")
 
 
+class SafeJSONResponse(JSONResponse):
+    """surrogate-safe JSON 렌더(악용 테스트 ABUSE-BUG-2).
+
+    FastAPI 기본 JSONResponse는 `json.dumps(ensure_ascii=False).encode("utf-8")`라, 응답 본문에
+    짝 없는 surrogate(\\uD800)가 섞이면 utf-8 인코딩이 터져 500이 된다(특히 4xx 에러가 잘못된
+    입력값을 그대로 echo할 때). errors="replace"로 그런 바이트만 �로 치환해 응답이 깨지지 않게 한다.
+    """
+
+    def render(self, content: object) -> bytes:
+        return json.dumps(
+            content, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":")
+        ).encode("utf-8", errors="replace")
+
+
+def _cors_headers(request: Request) -> dict[str, str]:
+    """에러 응답에 CORS 헤더를 직접 단다 — catch-all 핸들러는 CORSMiddleware 바깥에서 돌아
+    안 그러면 브라우저가 net::ERR_FAILED로 진짜 에러를 가린다(결제 등)."""
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origin_list:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
+async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """422 본문이 문제의 입력값을 echo하므로 surrogate-safe 렌더러로 응답(기본 렌더러는 깨짐)."""
+    return SafeJSONResponse(
+        status_code=422,
+        content={"detail": jsonable_encoder(exc.errors())},
+        headers=_cors_headers(request),
+    )
+
+
+async def _http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """HTTPException(예: 400에 사용자 입력 echo)도 surrogate-safe 렌더 + CORS 유지."""
+    return SafeJSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers={**(exc.headers or {}), **_cors_headers(request)},
+    )
+
+
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """처리되지 않은 서버 에러를 로깅하고 Slack으로 알린 뒤 500 응답(slack 미설정 시 알림만 no-op).
 
@@ -82,17 +131,21 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     )
     # 이 catch-all 핸들러는 CORSMiddleware 바깥(ServerErrorMiddleware)에서 돌아서 500 응답에
     # CORS 헤더가 안 붙는다 → 브라우저엔 net::ERR_FAILED로 보여 진짜 에러를 가린다(특히 결제). 직접 단다.
-    headers: dict[str, str] = {}
-    origin = request.headers.get("origin")
-    if origin and origin in settings.cors_origin_list:
-        headers["Access-Control-Allow-Origin"] = origin
-        headers["Access-Control-Allow-Credentials"] = "true"
-        headers["Vary"] = "Origin"
-    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"}, headers=headers)
+    return SafeJSONResponse(
+        status_code=500, content={"detail": "Internal Server Error"}, headers=_cors_headers(request)
+    )
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="cursor-pm backend", version="0.1.0", lifespan=lifespan)
+    # 기본 응답을 surrogate-safe 렌더러로 — 어떤 응답이든 깨진 바이트에 500 안 나게(ABUSE-BUG-2).
+    app = FastAPI(
+        title="cursor-pm backend", version="0.1.0", lifespan=lifespan,
+        default_response_class=SafeJSONResponse,
+    )
+
+    # 4xx 에러 응답도 surrogate-safe + CORS 유지(잘못된 입력값 echo 시 인코딩 크래시 방지).
+    app.add_exception_handler(RequestValidationError, _validation_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
 
     # 레이트 리밋(per-IP 전역). 초과 시 429.
     app.state.limiter = limiter

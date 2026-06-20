@@ -37,3 +37,29 @@ def test_clean_unicode_still_allowed():
     p = ProjectCreate(name="proj 🔥 測試 ‮rtl ​zwsp", template_keys=["development"])
     assert "🔥" in p.name
     assert ChatIn(message="안녕 🚀").message == "안녕 🚀"
+
+
+# --- HTTP 레벨: lone surrogate가 응답 직렬화를 깨 500 나지 않는지(ABUSE-BUG-2) ---
+
+
+def test_lone_surrogate_http_returns_422_not_500(client, auth):
+    # 와이어에 JSON 이스케이프 \ud800 → 서버 json.loads가 lone surrogate로 복원 →
+    # 검증 422. 그 422 본문이 입력값을 echo해도 SafeJSONResponse가 안 깨져야 함.
+    r = client.post(
+        "/api/projects",
+        headers={**auth(), "Content-Type": "application/json"},
+        content=b'{"name":"e2e-abuse-\\ud800","template_keys":["development"]}',
+    )
+    assert r.status_code == 422            # 500 아님
+    assert r.json()["detail"]              # 본문 파싱 가능
+
+
+def test_surrogate_in_400_detail_does_not_crash(client, auth):
+    # 알 수 없는 template_key에 surrogate → 400 detail이 그 값을 echo → 렌더 크래시 안 나야.
+    r = client.post(
+        "/api/projects",
+        headers={**auth(), "Content-Type": "application/json"},
+        content=b'{"name":"ok","template_keys":["\\ud800"]}',
+    )
+    assert r.status_code in (400, 422)     # 500 아님
+    assert r.content                       # 응답 바디 정상 인코딩
